@@ -1,0 +1,53 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Project Structure & Architecture
+
+## General Rules
+- Delete `.gitkeep` files when adding content to a directory
+- Maintain existing folder structure (no new folders)
+- Avoid using `DB::` facade; use `Model::query()` instead
+- No dependency changes without explicit approval
+- Follow Laravel's default directory structure
+- Use proper namespacing for all classes
+- Keep related files together in feature-based directories
+- Use proper naming conventions for all files
+- Document all classes and methods
+- Keep files focused and single-purpose
+- **DO NOT** run `php artisan serve --port=8000` to test
+
+## Architecture Principles
+- Follow Laravel's MVC architecture
+- Use Laravel's routing system for defining application endpoints
+- Implement proper request validation using Form Requests
+- Use Laravel's Blade templating engine for views
+- Implement proper database relationships using Eloquent
+- Use Laravel's built-in authentication scaffolding
+- Implement proper API resource transformations
+- Use Laravel's event and listener system for decoupled code
+- Implement proper database transactions for data integrity
+- Use Laravel's built-in scheduling features for recurring tasks
+- Use proper dependency injection
+- Implement proper error handling and logging
+- Use Laravel's caching mechanisms for improved performance
+- Implement proper CSRF protection and security measures
+- Use Laravel Mix for asset compilation
+- Implement proper database indexing for improved query performance
+- Use Laravel's built-in pagination features
+- Implement proper error logging and monitoring
+- Use proper validation and authorization
+- Keep business logic in service classes or actions
+- Use proper type hints and return types
+- Document all public methods with PHPDoc blocks
+- Use proper error messages and translations
+- Keep controllers focused on HTTP concerns
+- Delegate business logic to service classes or actions
+- Use proper dependency management
+- Keep files focused and single-purpose
+- Use proper naming conventions for all files
+- Document all classes and methods
+- Keep related files together in feature-based directories
+- Use proper namespacing for all classes
+- Follow Laravel's default directory structure

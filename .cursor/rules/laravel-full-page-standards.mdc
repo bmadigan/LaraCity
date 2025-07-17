@@ -1,0 +1,391 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Laravel Full-Page Components Guide
+
+## Overview
+
+Laravel Livewire components can be used to build full-page components for your application. However, **controller-based routing is the preferred approach** for better reliability, error handling, and debugging.
+
+## Preferred Approach: Controller-Based Routing
+
+### Creating Controller-Based Routes
+
+The recommended way to serve Livewire components is through controllers that return the component class:
+
+```php
+// routes/web.php
+use App\Http\Controllers\PostController;
+
+Route::get('/posts/create', [PostController::class, 'create'])->name('posts.create');
+Route::get('/posts/{post}', [PostController::class, 'show'])->name('posts.show');
+```
+
+```php
+// app/Http/Controllers/PostController.php
+<?php
+
+declare(strict_types=1);
+
+namespace App\Http\Controllers;
+
+use App\Livewire\Posts\Create as CreatePostComponent;
+use App\Livewire\Posts\Show as ShowPostComponent;
+use App\Models\Post;
+
+class PostController extends Controller
+{
+    public function create()
+    {
+        // Pre-route validation, authorization, or data preparation
+        $this->authorize('create', Post::class);
+
+        return CreatePostComponent::class;
+    }
+
+    public function show(Post $post)
+    {
+        // Pre-route validation, authorization, or data preparation
+        $this->authorize('view', $post);
+
+        return ShowPostComponent::class;
+    }
+}
+```
+
+### Benefits of Controller-Based Routing
+- **More reliable**: Controller-based routing is more stable than direct Livewire routing
+- **Better error handling**: Controllers can validate data and handle errors before rendering
+- **Easier debugging**: Clear separation between route handling and component logic
+- **Standard Laravel pattern**: Follows Laravel best practices
+- **Authorization**: Easy to add middleware and authorization checks
+- **Pre-processing**: Can prepare data or perform actions before component renders
+
+## Alternative: Direct Livewire Routing (Limited Use)
+
+**Note**: Direct Livewire routing should only be used for simple, non-critical pages without complex business logic.
+
+To create a direct full-page component, define a route in your `routes/web.php` file and use the `Route::get()` method to map the component directly to a specific URL.
+
+Example for a `CreatePost` component at `/posts/create`:
+
+```php
+use App\Livewire\CreatePost;
+
+// Only for simple pages without complex logic
+Route::get('/posts/create', CreatePost::class);
+```
+
+## Layout Configuration
+
+### Basic Layout Setup
+
+Full-page components use your application's layout, typically defined in `resources/views/components/layouts/app.blade.php`.
+
+Create the layout file using:
+
+```bash
+php artisan livewire:layout
+```
+
+Basic layout template:
+
+```html
+<!DOCTYPE html>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{{ $title ?? 'Page Title' }}</title>
+    </head>
+    <body>
+        {{ $slot }}
+    </body>
+</html>
+```
+
+### Global Layout Configuration
+
+Set a custom layout in `config/livewire.php`:
+
+```php
+'layout' => 'layouts.app',
+```
+
+### Per-Component Layout Configuration
+
+#### Using Attributes
+
+```php
+namespace App\Livewire;
+
+use Livewire\Attributes\Layout;
+use Livewire\Component;
+
+class CreatePost extends Component
+{
+    #[Layout('layouts.app')]
+    public function render()
+    {
+        return view('livewire.create-post');
+    }
+}
+```
+
+#### Using Fluent Syntax
+
+```php
+public function render()
+{
+    return view('livewire.create-post')
+         ->layout('layouts.app');
+}
+```
+
+#### Using Blade @extends
+
+Layout file:
+```html
+<body>
+    @yield('content')
+</body>
+```
+
+Component:
+```php
+public function render()
+{
+    return view('livewire.show-posts')
+        ->extends('layouts.app')
+        ->section('body');
+}
+```
+
+## Page Titles
+
+### Setting Dynamic Titles
+
+Include in layout:
+```html
+<head>
+    <title>{{ $title ?? 'Page Title' }}</title>
+</head>
+```
+
+### Using Title Attribute
+
+```php
+namespace App\Livewire;
+
+use Livewire\Attributes\Title;
+use Livewire\Component;
+
+class CreatePost extends Component
+{
+    #[Title('Create Post')]
+    public function render()
+    {
+        return view('livewire.create-post');
+    }
+}
+```
+
+### Using Fluent Title Method
+
+```php
+public function render()
+{
+    return view('livewire.create-post')
+         ->title('Create Post');
+}
+```
+
+## Layout Slots
+
+### Adding Language Slots
+
+Layout file:
+```html
+<!DOCTYPE html>
+<html lang="{{ $lang ?? str_replace('_', '-', app()->getLocale()) }}">
+    <!-- ... -->
+</html>
+```
+
+Component view:
+```blade
+<x-slot name="lang">en</x-slot>
+```
+
+## Route Parameters
+
+### Controller-Based Route Parameters (Preferred)
+
+**Route definition with controller:**
+```php
+use App\Http\Controllers\PostController;
+
+Route::get('/posts/{id}', [PostController::class, 'show'])->name('posts.show');
+```
+
+**Controller:**
+```php
+namespace App\Http\Controllers;
+
+use App\Livewire\ShowPost as ShowPostComponent;
+use App\Models\Post;
+
+class PostController extends Controller
+{
+    public function show($id)
+    {
+        // Validation, authorization, data preparation
+        $post = Post::findOrFail($id);
+        $this->authorize('view', $post);
+
+        return ShowPostComponent::class;
+    }
+}
+```
+
+**Component (receives data via mount):**
+```php
+namespace App\Livewire;
+
+use Livewire\Component;
+
+class ShowPost extends Component
+{
+    public $postId;
+
+    public function mount($id)
+    {
+        $this->postId = $id;
+    }
+
+    public function render()
+    {
+        return view('livewire.show-post');
+    }
+}
+```
+
+### Controller-Based Route Model Binding (Preferred)
+
+**Route definition:**
+```php
+use App\Http\Controllers\PostController;
+
+Route::get('/posts/{post}', [PostController::class, 'show'])->name('posts.show');
+```
+
+**Controller with model binding:**
+```php
+namespace App\Http\Controllers;
+
+use App\Livewire\ShowPost as ShowPostComponent;
+use App\Models\Post;
+
+class PostController extends Controller
+{
+    public function show(Post $post)
+    {
+        // Authorization and validation
+        $this->authorize('view', $post);
+
+        return ShowPostComponent::class;
+    }
+}
+```
+
+**Component with model binding:**
+```php
+namespace App\Livewire;
+
+use App\Models\Post;
+use Livewire\Component;
+
+class ShowPost extends Component
+{
+    public $post;
+
+    public function mount(Post $post)
+    {
+        $this->post = $post;
+    }
+
+    public function render()
+    {
+        return view('livewire.show-post');
+    }
+}
+```
+
+### Alternative: Direct Route Parameters (Limited Use)
+
+**Basic Route Parameters:**
+
+Route definition:
+```php
+use App\Livewire\ShowPost;
+
+// Only for simple pages
+Route::get('/posts/{id}', ShowPost::class);
+```
+
+Component:
+```php
+namespace App\Livewire;
+
+use Livewire\Component;
+
+class ShowPost extends Component
+{
+    public $postId;
+
+    public function mount($id)
+    {
+        $this->postId = $id;
+    }
+
+    public function render()
+    {
+        return view('livewire.show-post');
+    }
+}
+```
+
+**Route Model Binding:**
+
+Route definition:
+```php
+use App\Livewire\ShowPost;
+
+// Only for simple pages
+Route::get('/posts/{post}', ShowPost::class);
+```
+
+Component with model binding:
+```php
+namespace App\Livewire;
+
+use App\Models\Post;
+use Livewire\Component;
+
+class ShowPost extends Component
+{
+    public $post;
+
+    public function mount(Post $post)
+    {
+        $this->post = $post;
+    }
+
+    public function render()
+    {
+        return view('livewire.show-post');
+    }
+}
+```

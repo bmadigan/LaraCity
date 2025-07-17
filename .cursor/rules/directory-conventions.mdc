@@ -1,0 +1,61 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Directory Conventions
+
+## Controllers (`app/Http/Controllers`)
+- No abstract or base controllers
+- Use descriptive names that reflect their purpose
+- Follow RESTful naming conventions when appropriate
+- Use single action controllers for complex operations
+- Implement proper middleware for request filtering
+- Use resource controllers for CRUD operations
+- Keep controllers focused on HTTP concerns
+- Delegate business logic to service classes or actions
+- Use proper dependency injection
+- Document all public methods with PHPDoc blocks
+
+## Requests (`app/Http/Requests`)
+- Use FormRequest classes for validation
+- Name with prefixes: `Create`, `Update`, `Delete`
+- Include proper validation rules and messages
+- Use custom validation rules when needed
+- Implement proper authorization checks
+- Use proper type hints and return types
+- Document validation rules and messages
+- Keep validation logic in request classes
+- Use proper error messages and translations
+
+## Actions (`app/Actions`)
+- Follow the Actions pattern
+- Name actions using verbs
+- Keep actions focused on single operations
+- Use proper dependency injection
+- Implement proper error handling
+- Document all public methods
+- Use proper type hints and return types
+- Keep business logic in action classes
+- Use proper validation and authorization
+- Example implementation:
+
+```php
+public function store(CreateTodoRequest $request, CreateTodoAction $action)
+{
+    $user = $request->user();
+    $action->handle($user, $request->validated());
+}
+```
+
+## General Directory Structure
+- Use lowercase with dashes for directories
+- Keep related files together in feature-based directories
+- Follow Laravel's default directory structure
+- Use proper namespacing for all classes
+- Organize by feature rather than type
+- Keep related models, controllers, and views together
+- Use proper naming conventions for all files
+- Document all classes and methods
+- Keep files focused and single-purpose
+- Use proper dependency management
