@@ -15,12 +15,16 @@ from enum import Enum
 import structlog
 
 from langchain.schema import Document
-from langchain.retrievers import BaseRetriever
+from langchain_core.retrievers import BaseRetriever
 
-from ..models.embeddings import EmbeddingGenerator
-from ..config import config
-from .vector_store import VectorStoreManager
-from .document_loader import ComplaintDocumentLoader
+import sys
+import os
+# Add the parent directory to the path so we can import from other modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models.embeddings import EmbeddingGenerator
+from config import config
+from rag.vector_store import VectorStoreManager
+from rag.document_loader import ComplaintDocumentLoader
 
 logger = structlog.get_logger(__name__)
 

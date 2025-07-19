@@ -34,9 +34,9 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 from config import config
-from chains.analysis_chain import complaint_analysis_chain
-from chains.rag_chain import rag_chain
-from chains.chat_chain import chat_chain
+from chains.analysis_chain import ComplaintAnalysisChain
+from chains.rag_chain import RAGChain
+from chains.chat_chain import ChatChain
 from rag.document_loader import complaint_document_loader
 from rag.vector_store import vector_store_manager
 from rag.pgvector_store import PGVectorStoreManager
@@ -140,8 +140,9 @@ class LangChainRunner:
         logger.debug("Starting complaint analysis",
                     complaint_id=complaint_data.get('id'))
         
-        # Analyze using the analysis chain
-        analysis_result = complaint_analysis_chain.analyze_complaint(complaint_data)
+        # Create and use analysis chain instance
+        analysis_chain = ComplaintAnalysisChain()
+        analysis_result = analysis_chain.analyze_complaint(complaint_data)
         
         return {
             'analysis': analysis_result,
@@ -171,7 +172,8 @@ class LangChainRunner:
                     has_embeddings=len(complaint_embeddings) > 0,
                     has_data=len(complaint_data) > 0)
         
-        # Use RAG chain to answer the question
+        # Create and use RAG chain instance
+        rag_chain = RAGChain()
         rag_result = rag_chain.answer_question(
             question=question,
             complaint_embeddings=complaint_embeddings,
@@ -207,7 +209,8 @@ class LangChainRunner:
                     message_length=len(message),
                     session_id=session_id)
         
-        # Use chat chain for conversational interaction
+        # Create and use chat chain instance
+        chat_chain = ChatChain()
         chat_result = chat_chain.chat(
             message=message,
             session_id=session_id,

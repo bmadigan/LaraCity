@@ -32,9 +32,13 @@ except ImportError:
     LANGCHAIN_PGVECTOR_AVAILABLE = False
     PGVector = None
 
-from ..models.embeddings import EmbeddingGenerator
-from ..config import config
-from .document_loader import ComplaintDocumentLoader
+import sys
+import os
+# Add the parent directory to the path so we can import from other modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models.embeddings import EmbeddingGenerator
+from config import config
+from rag.document_loader import ComplaintDocumentLoader
 
 logger = structlog.get_logger(__name__)
 
@@ -120,7 +124,7 @@ class PGVectorStoreManager:
         """
         try:
             # Generate embedding for document content
-            embedding = self.embedding_generator.embed_text(document.page_content)
+            embedding = self.embedding_generator.embed_user_question(document.page_content)
             
             # Create content hash for deduplication
             content_hash = hashlib.sha256(document.page_content.encode()).hexdigest()
@@ -197,7 +201,7 @@ class PGVectorStoreManager:
         """
         try:
             # Generate query embedding
-            query_embedding = self.embedding_generator.embed_text(query)
+            query_embedding = self.embedding_generator.embed_user_question(query)
             embedding_str = f"[{','.join(map(str, query_embedding))}]"
             
             conn = psycopg2.connect(**self.connection_params)
@@ -330,7 +334,7 @@ class PGVectorStoreManager:
                 
                 self.vector_store = PGVector(
                     connection_string=connection_string,
-                    embedding_function=self.embedding_generator.langchain_embeddings,
+                    embedding_function=self.embedding_generator.embeddings,
                     collection_name="document_embeddings",
                     distance_strategy="cosine"
                 )

@@ -1,0 +1,435 @@
+{
+  "info": {
+    "name": "LaraCity API Collection",
+    "description": "Complete API collection for LaraCity AI-powered municipal complaint management system. Includes authentication, complaint management, semantic search, and administrative endpoints.",
+    "version": "1.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{api_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://laracity.test/api",
+      "type": "string",
+      "description": "Base URL for LaraCity API"
+    },
+    {
+      "key": "api_token",
+      "value": "",
+      "type": "string",
+      "description": "Laravel Sanctum API token for authentication"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "description": "Authentication endpoints for obtaining API tokens",
+      "item": [
+        {
+          "name": "Create API Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/../sanctum/token",
+              "host": ["{{base_url}}"],
+              "path": ["../", "sanctum", "token"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"password\": \"password\",\n  \"device_name\": \"postman-api-testing\"\n}"
+            },
+            "description": "Creates a new API token for authentication. Use the returned token in the Authorization header for subsequent requests."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Complaints",
+      "description": "Complaint management endpoints",
+      "item": [
+        {
+          "name": "List Complaints",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/complaints?per_page=10&sort_by=created_date&sort_order=desc",
+              "host": ["{{base_url}}"],
+              "path": ["complaints"],
+              "query": [
+                {
+                  "key": "per_page",
+                  "value": "10",
+                  "description": "Number of complaints per page (max 100)"
+                },
+                {
+                  "key": "sort_by",
+                  "value": "created_date",
+                  "description": "Sort field: created_date, risk_score, complaint_type"
+                },
+                {
+                  "key": "sort_order",
+                  "value": "desc",
+                  "description": "Sort order: asc or desc"
+                },
+                {
+                  "key": "borough",
+                  "value": "MANHATTAN",
+                  "description": "Filter by borough",
+                  "disabled": true
+                },
+                {
+                  "key": "status",
+                  "value": "Open",
+                  "description": "Filter by status",
+                  "disabled": true
+                },
+                {
+                  "key": "complaint_type",
+                  "value": "Heating",
+                  "description": "Filter by complaint type",
+                  "disabled": true
+                },
+                {
+                  "key": "risk_level",
+                  "value": "high",
+                  "description": "Filter by risk level: low, medium, high",
+                  "disabled": true
+                },
+                {
+                  "key": "date_from",
+                  "value": "2024-01-01",
+                  "description": "Filter complaints from date (YYYY-MM-DD)",
+                  "disabled": true
+                },
+                {
+                  "key": "date_to",
+                  "value": "2024-12-31",
+                  "description": "Filter complaints to date (YYYY-MM-DD)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Retrieve a paginated list of complaints with advanced filtering options."
+          }
+        },
+        {
+          "name": "Get Complaint Details",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/complaints/1",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "1"]
+            },
+            "description": "Get detailed information about a specific complaint including AI analysis data."
+          }
+        },
+        {
+          "name": "Complaints Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/complaints/summary",
+              "host": ["{{base_url}}"],
+              "path": ["complaints", "summary"],
+              "query": [
+                {
+                  "key": "borough",
+                  "value": "MANHATTAN",
+                  "description": "Filter summary by borough",
+                  "disabled": true
+                },
+                {
+                  "key": "date_range",
+                  "value": "30",
+                  "description": "Date range in days (default: 30)",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get aggregated statistics and summary data for complaints."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Semantic Search",
+      "description": "AI-powered search endpoints using vector embeddings",
+      "item": [
+        {
+          "name": "Hybrid Semantic Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/semantic",
+              "host": ["{{base_url}}"],
+              "path": ["search", "semantic"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"apartment heating problems in winter\",\n  \"filters\": {\n    \"borough\": \"BROOKLYN\",\n    \"status\": \"Open\"\n  },\n  \"options\": {\n    \"vector_weight\": 0.7,\n    \"metadata_weight\": 0.3,\n    \"similarity_threshold\": 0.6,\n    \"limit\": 10\n  }\n}"
+            },
+            "description": "Perform hybrid search combining vector similarity with metadata filtering."
+          }
+        },
+        {
+          "name": "Pure Vector Similarity Search",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/similar",
+              "host": ["{{base_url}}"],
+              "path": ["search", "similar"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"water leak ceiling damage apartment\",\n  \"limit\": 5,\n  \"similarity_threshold\": 0.7\n}"
+            },
+            "description": "Perform pure vector similarity search based on semantic meaning."
+          }
+        },
+        {
+          "name": "Generate Embeddings",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/embed",
+              "host": ["{{base_url}}"],
+              "path": ["search", "embed"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"noise complaints from neighbors playing loud music\",\n  \"include_metadata\": true\n}"
+            },
+            "description": "Generate vector embeddings for given text using OpenAI's embedding model."
+          }
+        },
+        {
+          "name": "Search Statistics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/stats",
+              "host": ["{{base_url}}"],
+              "path": ["search", "stats"]
+            },
+            "description": "Get vector store statistics and health information."
+          }
+        },
+        {
+          "name": "Test Search System",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/search/test",
+              "host": ["{{base_url}}"],
+              "path": ["search", "test"]
+            },
+            "description": "Test search system health and connectivity."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Actions",
+      "description": "Complaint action and escalation endpoints",
+      "item": [
+        {
+          "name": "Escalate Complaints",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/actions/escalate",
+              "host": ["{{base_url}}"],
+              "path": ["actions", "escalate"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"complaint_ids\": [1, 2, 3],\n  \"reason\": \"High risk complaints requiring immediate attention\",\n  \"priority\": \"urgent\",\n  \"notify_slack\": true,\n  \"assign_to\": \"emergency-team\"\n}"
+            },
+            "description": "Escalate multiple complaints with reason and priority level."
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Questions",
+      "description": "Natural language query logging",
+      "item": [
+        {
+          "name": "Log User Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/user-questions",
+              "host": ["{{base_url}}"],
+              "path": ["user-questions"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"question\": \"How many noise complaints were filed in Brooklyn last month?\",\n  \"context\": \"Dashboard analytics query\",\n  \"user_session\": \"session-12345\",\n  \"metadata\": {\n    \"source\": \"web-dashboard\",\n    \"user_role\": \"analyst\"\n  }\n}"
+            },
+            "description": "Log natural language questions from users for analytics and training."
+          }
+        }
+      ]
+    },
+    {
+      "name": "System",
+      "description": "System health and utility endpoints",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "Check system health including database, AI services, and dependencies."
+          }
+        }
+      ]
+    }
+  ],
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Auto-set API token from environment if available",
+          "if (!pm.collectionVariables.get('api_token') && pm.environment.get('laracity_token')) {",
+          "    pm.collectionVariables.set('api_token', pm.environment.get('laracity_token'));",
+          "}"
+        ]
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Common test scripts for all requests",
+          "pm.test('Response time is reasonable', function () {",
+          "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "});",
+          "",
+          "pm.test('Response has correct content type', function () {",
+          "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "});",
+          "",
+          "// Log response for debugging",
+          "console.log('Response Status:', pm.response.status);",
+          "console.log('Response Time:', pm.response.responseTime + 'ms');"
+        ]
+      }
+    }
+  ]
+}

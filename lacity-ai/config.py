@@ -37,6 +37,8 @@ class LaraCityConfig:
     # RAG Configuration
     RAG_CHUNK_SIZE: int = int(os.getenv("RAG_CHUNK_SIZE", "1000"))
     RAG_CHUNK_OVERLAP: int = int(os.getenv("RAG_CHUNK_OVERLAP", "200"))
+    VECTOR_STORE_PATH: str = os.getenv("VECTOR_STORE_PATH", "./data/vector_store")
+    EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "50"))
     
     # Database Configuration (PostgreSQL with pgvector)
     DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")

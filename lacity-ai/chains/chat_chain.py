@@ -15,10 +15,14 @@ from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain.memory import ConversationSummaryBufferMemory
 import structlog
 
-from ..models.openai_client import OpenAIClient
-from ..prompts.system_prompts import SystemPrompts
-from ..config import config
-from .rag_chain import RAGChain
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from models.openai_client import OpenAIClient
+from prompts.system_prompts import SystemPrompts
+from config import config
+from chains.rag_chain import RAGChain
 
 logger = structlog.get_logger(__name__)
 

@@ -16,11 +16,15 @@ from langchain.schema.runnable import RunnablePassthrough, RunnableLambda
 from langchain_core.messages import SystemMessage, HumanMessage
 import structlog
 
-from ..models.openai_client import OpenAIClient
-from ..prompts.templates import ComplaintAnalysisTemplate
-from ..prompts.few_shot_examples import FewShotExamples
-from ..prompts.system_prompts import SystemPrompts
-from ..config import config
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from models.openai_client import OpenAIClient
+from prompts.templates import ComplaintAnalysisTemplate
+from prompts.few_shot_examples import FewShotExamples
+from prompts.system_prompts import SystemPrompts
+from config import config
 
 logger = structlog.get_logger(__name__)
 

@@ -14,7 +14,10 @@
       "Bash(python3:*)",
       "Bash(chmod:*)",
       "Bash(psql:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(pip install:*)",
+      "Bash(pip3 install:*)",
+      "Bash(python:*)"
     ],
     "deny": []
   }

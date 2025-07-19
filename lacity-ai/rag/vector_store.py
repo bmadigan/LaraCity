@@ -26,9 +26,13 @@ except ImportError:
 from langchain.schema import Document
 from langchain.vectorstores import FAISS as LangChainFAISS
 
-from ..models.embeddings import EmbeddingGenerator
-from ..config import config
-from .document_loader import ComplaintDocumentLoader
+import sys
+import os
+# Add the parent directory to the path so we can import from other modules
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from models.embeddings import EmbeddingGenerator
+from config import config
+from rag.document_loader import ComplaintDocumentLoader
 
 logger = structlog.get_logger(__name__)
 
@@ -118,7 +122,8 @@ class VectorStoreManager:
             batch_size = config.EMBEDDING_BATCH_SIZE
             for i in range(0, len(texts), batch_size):
                 batch_texts = texts[i:i + batch_size]
-                batch_embeddings = self.embedding_generator.embed_documents(batch_texts)
+                # Use the embedding generator's embeddings client directly for documents
+                batch_embeddings = self.embedding_generator.embeddings.embed_documents(batch_texts)
                 embeddings.extend(batch_embeddings)
                 
                 logger.debug("Processed embedding batch",
