@@ -10,7 +10,8 @@
       "Bash(rm:*)",
       "Bash(curl:*)",
       "Bash(composer:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(python3:*)"
     ],
     "deny": []
   }
