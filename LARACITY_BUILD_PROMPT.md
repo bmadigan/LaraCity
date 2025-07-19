@@ -311,6 +311,7 @@ REQUIREMENTS:
 - PythonAiBridge service using Symfony Process (prepare for LangChain integration)
 - Slack notification with AI-condensed summaries (<200 chars)
 - Action audit logging for all escalations
+- Git commits
 - UPDATE Tutorial-Details.md with Phase D documentation
 
 WORKFLOW:
@@ -368,6 +369,8 @@ REQUIREMENTS:
 │   │   └── civic_assistant.py (main chat agent)
 │   ├── langchain_runner.py (Laravel bridge entry point)
 │   └── README.md (complete beginner setup guide)
+|   Git commits
+|   Update Tutorial
 
 LANGCHAIN COMPONENTS TO IMPLEMENT:
 1. **OpenAI Integration**: Client setup, API key management, error handling
@@ -407,6 +410,7 @@ REQUIREMENTS:
 - Hybrid search: vector similarity + metadata filtering
 - Integration with LangChain vector store
 - Performance optimization for similarity queries
+- Git commits
 - UPDATE Tutorial-Details.md with Phase F documentation
 
 DELIVERABLES:
@@ -439,6 +443,7 @@ REQUIREMENTS:
 - "What This Demonstrates" section for recruiters
 - Claude Code usage guide with slash commands
 - Environment variable documentation
+- Git commits
 - FINALIZE Tutorial-Details.md with complete learning path
 
 PORTFOLIO HIGHLIGHTS:

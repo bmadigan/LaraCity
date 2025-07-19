@@ -259,18 +259,451 @@ $latitude = is_numeric($data['latitude']) ? (float) $data['latitude'] : null;
 
 ---
 
-## 3. Phase C: API Setup (Upcoming)
+## 3. Phase C: API Setup (COMPLETED)
 
-**Purpose**: Create REST API endpoints for data access and filtering
+**Status**: ✅ **COMPLETED**
 
-**Planned Components**:
-- Authenticated API routes using Livewire Starter Kit auth
-- `GET /api/complaints` with advanced filtering (borough, type, status, date range)
-- `GET /api/complaints/summary` for aggregated statistics  
-- `POST /api/actions/escalate` for batch operations
-- API Resources for consistent JSON transformation
+### What We Built
 
-**Learning Focus**: Laravel API design patterns for data-heavy applications
+#### 🔐 Laravel Sanctum Authentication Setup
+
+**Installation & Configuration**:
+```bash
+# Install Sanctum for API authentication
+composer require laravel/sanctum
+php artisan vendor:publish --provider="Laravel\Sanctum\SanctumServiceProvider"
+php artisan migrate
+```
+
+**Route Protection**:
+```php
+// routes/api.php - All endpoints require authentication
+Route::middleware(['auth:sanctum'])->group(function () {
+    Route::get('/complaints', [ComplaintController::class, 'index']);
+    Route::get('/complaints/summary', [ComplaintController::class, 'summary']);
+    Route::get('/complaints/{complaint}', [ComplaintController::class, 'show']);
+    Route::post('/actions/escalate', [ActionController::class, 'escalate']);
+    Route::post('/user-questions', [UserQuestionController::class, 'store']);
+});
+```
+
+**Why Sanctum?**
+- **Token-based authentication**: Perfect for API consumers
+- **Seamless integration**: Works with existing Livewire auth
+- **Security**: Proper token scoping and expiration
+- **Future-ready**: Prepared for mobile apps and third-party integrations
+
+#### 📊 Advanced Complaint Filtering API
+
+**ComplaintController** - Sophisticated data access patterns:
+
+**Key Features**:
+1. **Consistent Query Building**: Reusable filtering logic between endpoints
+2. **Performance Optimization**: Strategic use of query cloning and eager loading
+3. **Rich Aggregation**: Summary statistics with proper group-by operations
+4. **Flexible Sorting**: Including complex sorting like risk score from joined tables
+
+**Advanced Filtering Example**:
+```php
+// GET /api/complaints?borough=MANHATTAN&status=Open&risk_level=high&date_from=2025-07-01
+
+private function buildFilteredQuery(ComplaintFilterRequest $request): Builder
+{
+    $query = Complaint::query();
+    $filters = $request->getFilters();
+
+    // Geographic filtering
+    if (!empty($filters['borough'])) {
+        $query->byBorough($filters['borough']);
+    }
+
+    // Risk-based filtering (requires relationship join)
+    if (!empty($filters['risk_level'])) {
+        $query->whereHas('analysis', function (Builder $q) use ($filters) {
+            switch ($filters['risk_level']) {
+                case 'high': $q->where('risk_score', '>=', 0.7); break;
+                case 'medium': $q->whereBetween('risk_score', [0.4, 0.69]); break;
+                case 'low': $q->where('risk_score', '<', 0.4); break;
+            }
+        });
+    }
+
+    // Date range filtering
+    if (!empty($filters['date_from']) || !empty($filters['date_to'])) {
+        $dateFrom = $filters['date_from'] ?? '1900-01-01';
+        $dateTo = $filters['date_to'] ?? now()->format('Y-m-d');
+        $query->byDateRange($dateFrom, $dateTo);
+    }
+
+    return $query;
+}
+```
+
+**Summary Statistics Endpoint**:
+```php
+// GET /api/complaints/summary - Aggregated data for dashboards
+{
+    "data": {
+        "total_complaints": 4999,
+        "by_status": {
+            "Open": 1234,
+            "InProgress": 567,
+            "Closed": 3198
+        },
+        "by_priority": {
+            "High": 89,
+            "Medium": 456,
+            "Low": 4454
+        },
+        "risk_analysis": {
+            "total_analyzed": 394,
+            "high_risk": 6,
+            "medium_risk": 89,
+            "low_risk": 299,
+            "average_risk_score": 0.342
+        }
+    }
+}
+```
+
+**Performance Patterns**:
+```php
+// Query cloning for consistent totals
+$baseQuery = clone $query;
+$summary = [
+    'total_complaints' => $baseQuery->count(),
+    'by_status' => $this->getStatusBreakdown(clone $query),
+    'by_priority' => $this->getPriorityBreakdown(clone $query),
+];
+
+// Efficient joins for complex sorting
+if ($sortBy === 'risk_score') {
+    return $query->leftJoin('complaint_analyses', 'complaints.id', '=', 'complaint_analyses.complaint_id')
+        ->orderBy('complaint_analyses.risk_score', $direction)
+        ->select('complaints.*');
+}
+```
+
+#### 🔄 Batch Operations API
+
+**ActionController** - Transaction-safe mass operations:
+
+**Key Features**:
+1. **Database Transactions**: All-or-nothing batch processing
+2. **Flexible Input**: Accept complaint IDs or filter criteria
+3. **Comprehensive Logging**: Full audit trail for compliance
+4. **Safety Limits**: Prevent accidental mass operations
+
+**Escalation Workflow Example**:
+```php
+// POST /api/actions/escalate
+{
+    "complaint_ids": [123, 456, 789],
+    "reason": "High risk complaints requiring immediate attention",
+    "escalation_level": "emergency",
+    "send_notification": true
+}
+
+// Response includes complete audit trail
+{
+    "message": "Successfully escalated 3 complaints",
+    "data": {
+        "escalated_count": 3,
+        "actions_created": [...], // ActionResource collection
+        "escalation_level": "emergency",
+        "notification_sent": true
+    }
+}
+```
+
+**Transaction Safety Pattern**:
+```php
+try {
+    DB::beginTransaction();
+    
+    foreach ($complaints as $complaint) {
+        // Update complaint status
+        $complaint->update(['status' => Complaint::STATUS_ESCALATED]);
+        
+        // Create escalation action with rich context
+        $action = CreateAction::run(
+            Action::TYPE_ESCALATE,
+            [
+                'reason' => $validated['reason'],
+                'escalation_level' => $validated['escalation_level'],
+                'risk_score' => $complaint->analysis?->risk_score,
+                'escalated_at' => now()->toISOString(),
+                'escalated_by_user_id' => $userId,
+            ],
+            (string) $userId,
+            $complaint
+        );
+        
+        // Optional notification workflow
+        if ($validated['send_notification'] ?? false) {
+            CreateAction::run(Action::TYPE_NOTIFY, [...], 'system', $complaint);
+        }
+    }
+    
+    DB::commit();
+} catch (\Exception $e) {
+    DB::rollBack();
+    return response()->json(['message' => 'Escalation failed', 'error' => $e->getMessage()], 500);
+}
+```
+
+#### 🤖 RAG System Preparation API
+
+**UserQuestionController** - Chat and question tracking for Phase E:
+
+**Natural Language Processing Prep**:
+```php
+// POST /api/user-questions
+{
+    "question": "Show me all high-risk noise complaints in Brooklyn from last week",
+    "conversation_id": "uuid-for-chat-session",
+    "context": {
+        "current_page": "dashboard",
+        "filters_applied": ["borough=BROOKLYN"]
+    }
+}
+
+// Basic NLP parsing for filter extraction
+private function parseFiltersFromQuestion(string $question): array
+{
+    $filters = [];
+    $lowerQuestion = strtolower($question);
+    
+    // Borough detection
+    $boroughs = ['manhattan', 'brooklyn', 'queens', 'bronx', 'staten island'];
+    foreach ($boroughs as $borough) {
+        if (str_contains($lowerQuestion, $borough)) {
+            $filters['borough'] = strtoupper($borough);
+            break;
+        }
+    }
+    
+    // Risk level detection  
+    if (str_contains($lowerQuestion, 'high risk') || str_contains($lowerQuestion, 'dangerous')) {
+        $filters['risk_level'] = 'high';
+    }
+    
+    // Time-based detection
+    if (str_contains($lowerQuestion, 'last week')) {
+        $filters['date_from'] = now()->subWeek()->format('Y-m-d');
+    }
+    
+    return $filters;
+}
+```
+
+**Phase E Integration Ready**:
+- **Question Storage**: All user queries logged with parsed filters
+- **Conversation Tracking**: Multi-turn chat session support
+- **Context Preservation**: User location and current state captured
+- **Response Preparation**: `ai_response` field ready for LangChain integration
+
+#### 🎯 API Resource Pattern
+
+**Consistent JSON Transformation**:
+
+**ComplaintResource** - Rich data representation:
+```php
+public function toArray($request): array
+{
+    return [
+        'id' => $this->id,
+        'complaint_number' => $this->complaint_number,
+        'type' => $this->complaint_type,
+        'description' => $this->descriptor,
+        'status' => $this->status,
+        'priority' => $this->priority,
+        'location' => [
+            'borough' => $this->borough,
+            'address' => $this->incident_address,
+            'coordinates' => [
+                'lat' => $this->latitude,
+                'lng' => $this->longitude,
+            ],
+        ],
+        'agency' => [
+            'code' => $this->agency,
+            'name' => $this->agency_name,
+        ],
+        'dates' => [
+            'submitted' => $this->submitted_at?->toISOString(),
+            'resolved' => $this->resolved_at?->toISOString(),
+            'due' => $this->due_date?->toISOString(),
+        ],
+        'analysis' => $this->whenLoaded('analysis', function () {
+            return new ComplaintAnalysisResource($this->analysis);
+        }),
+        'actions_count' => $this->whenCounted('actions'),
+        'created_at' => $this->created_at->toISOString(),
+        'updated_at' => $this->updated_at->toISOString(),
+    ];
+}
+```
+
+**Benefits**:
+- **API Versioning Ready**: Easy to modify response structure
+- **Relationship Control**: Conditional loading prevents N+1 queries
+- **Consistent Formatting**: ISO timestamps, structured nested data
+- **Future-Proof**: Easy to add computed fields and metadata
+
+#### 🛡️ Form Request Validation
+
+**ComplaintFilterRequest** - Robust input validation:
+
+**Advanced Validation Patterns**:
+```php
+public function rules(): array
+{
+    return [
+        'borough' => ['sometimes', 'string', Rule::in(['MANHATTAN', 'BROOKLYN', 'QUEENS', 'BRONX', 'STATEN ISLAND'])],
+        'status' => ['sometimes', 'string', Rule::in(['Open', 'InProgress', 'Closed', 'Escalated'])],
+        'priority' => ['sometimes', 'string', Rule::in(['Low', 'Medium', 'High', 'Critical'])],
+        'risk_level' => ['sometimes', 'string', Rule::in(['low', 'medium', 'high'])],
+        'date_from' => ['sometimes', 'date_format:Y-m-d'],
+        'date_to' => ['sometimes', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+        'per_page' => ['sometimes', 'integer', 'min:1', 'max:100'],
+        'sort_by' => ['sometimes', 'string', Rule::in(['submitted_at', 'status', 'priority', 'risk_score'])],
+        'sort_direction' => ['sometimes', 'string', Rule::in(['asc', 'desc'])],
+    ];
+}
+
+// Helper methods for clean controller logic
+public function getFilters(): array
+{
+    return $this->only(['borough', 'type', 'status', 'priority', 'agency', 'date_from', 'date_to', 'risk_level']);
+}
+
+public function getPagination(): array
+{
+    return [
+        'per_page' => $this->get('per_page', 15),
+        'page' => $this->get('page', 1),
+    ];
+}
+```
+
+**EscalateComplaintsRequest** - Complex business validation:
+```php
+public function withValidator($validator): void
+{
+    $validator->after(function ($validator) {
+        // Business rule: Must provide either IDs or filters
+        if (!$this->has('complaint_ids') && !$this->has('filters')) {
+            $validator->errors()->add('complaint_ids', 'Either complaint_ids or filters must be provided');
+        }
+    });
+}
+```
+
+#### 🔧 Technical Implementation Details
+
+**Bootstrap Configuration Fix**:
+```php
+// bootstrap/app.php - Critical fix for API route registration
+return Application::configure(basePath: dirname(__DIR__))
+    ->withRouting(
+        web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',    // ← This was missing!
+        commands: __DIR__.'/../routes/console.php',
+        health: '/up',
+    )
+```
+
+**Route Testing & Validation**:
+```bash
+# Verify routes are registered
+php artisan route:list --path=api
+
+# Results:
+# POST   api/actions/escalate
+# GET    api/complaints  
+# GET    api/complaints/summary
+# GET    api/complaints/{complaint}
+# POST   api/user-questions
+
+# Test authentication
+curl -X GET "http://127.0.0.1:8000/api/complaints" -H "Accept: application/json"
+# Response: {"message":"Unauthenticated."}  ✅ Security working
+```
+
+#### 📈 Performance Considerations
+
+**Query Optimization Patterns**:
+1. **Strategic Indexes**: Complaint filtering uses existing indexes (borough+date, type+status)
+2. **Query Cloning**: Summary endpoint reuses filtered query for consistent totals
+3. **Eager Loading**: Relationships loaded efficiently with `with(['analysis'])`
+4. **Pagination**: Default 15 items, max 100 to prevent resource exhaustion
+5. **Join Optimization**: Risk score sorting uses efficient left join pattern
+
+**Scalability Preparation**:
+- **Batch Limits**: Max 100 complaints for escalation operations
+- **Database Transactions**: Prevent partial state during batch operations
+- **Error Isolation**: Single bad record doesn't break entire batch
+- **Memory Management**: Streaming for large datasets ready for Phase F
+
+#### 💡 API Design Lessons
+
+**RESTful Patterns**:
+1. **Resource-Based URLs**: `/complaints/{id}` for individual resources
+2. **HTTP Verbs**: GET for retrieval, POST for actions and creation
+3. **Consistent Responses**: All endpoints return structured JSON with `data` wrapper
+4. **Error Handling**: Proper HTTP status codes (401, 404, 422, 500)
+5. **Filtering Philosophy**: GET parameters for filtering, POST body for complex operations
+
+**Authentication Strategy**:
+- **Token-Based**: Stateless, scalable for distributed systems
+- **Middleware Protection**: All sensitive endpoints require authentication
+- **Future-Ready**: Prepared for role-based access control in production
+
+**Real-World Usage Example**:
+```bash
+# 1. Get auth token (requires existing user/auth flow)
+TOKEN="your-sanctum-token"
+
+# 2. Filter complaints by multiple criteria
+curl -X GET "http://127.0.0.1:8000/api/complaints?borough=MANHATTAN&status=Open&risk_level=high&per_page=25" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json"
+
+# 3. Get summary statistics for dashboard
+curl -X GET "http://127.0.0.1:8000/api/complaints/summary?borough=BROOKLYN&date_from=2025-07-01" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json"
+
+# 4. Escalate high-risk complaints
+curl -X POST "http://127.0.0.1:8000/api/actions/escalate" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "filters": {"risk_level": "high", "status": "Open"},
+    "reason": "Critical infrastructure complaints requiring immediate attention",
+    "escalation_level": "emergency",
+    "send_notification": true
+  }'
+```
+
+### Learning Focus Achieved
+
+**Laravel API Patterns Mastered**:
+1. **Authentication Architecture**: Sanctum integration with existing auth system
+2. **Request Validation**: Form requests with complex business rules
+3. **Resource Transformation**: API resources for consistent JSON structure
+4. **Query Optimization**: Efficient filtering, sorting, and aggregation patterns
+5. **Transaction Safety**: Database consistency during batch operations
+6. **Error Handling**: Graceful failure with proper HTTP responses
+
+**Preparation for AI Integration**:
+- **User Question API**: Ready for LangChain natural language processing
+- **Filter Parsing**: Basic NLP preparation for query understanding
+- **Action Tracking**: Complete audit trail for AI-triggered operations
+- **Risk Assessment**: API endpoints for accessing AI-generated risk scores
+
+**This comprehensive API foundation enables smooth integration with the Python AI components in Phases D-E!**
 
 ---
 
