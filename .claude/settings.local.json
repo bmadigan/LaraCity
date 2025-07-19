@@ -9,7 +9,8 @@
       "Bash(find:*)",
       "Bash(rm:*)",
       "Bash(curl:*)",
-      "Bash(composer:*)"
+      "Bash(composer:*)",
+      "Bash(mv:*)"
     ],
     "deny": []
   }
