@@ -11,7 +11,8 @@
       "Bash(curl:*)",
       "Bash(composer:*)",
       "Bash(mv:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(chmod:*)"
     ],
     "deny": []
   }
