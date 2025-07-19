@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Complaint extends Model
 {
+    use HasFactory;
     // Status constants
     public const STATUS_OPEN = 'Open';
     public const STATUS_IN_PROGRESS = 'InProgress';

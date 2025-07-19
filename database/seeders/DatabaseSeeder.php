@@ -52,19 +52,31 @@ class DatabaseSeeder extends Seeder
         // Admin user
         User::firstOrCreate(
             ['email' => 'admin@laracity.test'],
-            ['name' => 'LaraCity Admin']
+            [
+                'name' => 'LaraCity Admin',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]
         );
         
         // Analyst user
         User::firstOrCreate(
             ['email' => 'analyst@laracity.test'],
-            ['name' => 'Data Analyst']
+            [
+                'name' => 'Data Analyst', 
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]
         );
         
         // Field worker user
         User::firstOrCreate(
             ['email' => 'field@laracity.test'],
-            ['name' => 'Field Coordinator']
+            [
+                'name' => 'Field Coordinator',
+                'password' => bcrypt('password'),
+                'email_verified_at' => now(),
+            ]
         );
         
         $this->command->info('   ✓ Ensured 3 demo users exist');

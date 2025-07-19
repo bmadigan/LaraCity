@@ -15,7 +15,16 @@ return new class extends Migration
             $table->id();
             
             // Action details
-            $table->enum('type', ['escalate', 'summarize', 'notify', 'analyze']);
+            $table->enum('type', [
+                'escalate', 
+                'summarize', 
+                'notify', 
+                'analyze',
+                'analysis_triggered',
+                'status_change',
+                'complaint_deleted',
+                'complaint_restored'
+            ]);
             $table->json('parameters'); // JSON of action context
             $table->string('triggered_by'); // user_id or 'system'
             
