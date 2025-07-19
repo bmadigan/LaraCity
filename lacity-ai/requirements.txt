@@ -1,0 +1,44 @@
+# LaraCity AI - LangChain RAG System Dependencies
+# Phase E: LangChain Deep Dive Implementation
+
+# Core LangChain Framework
+langchain>=0.1.0
+langchain-openai>=0.1.0
+langchain-community>=0.1.0
+
+# Vector Stores and Embeddings
+faiss-cpu>=1.7.4
+pgvector>=0.2.0
+psycopg2-binary>=2.9.0
+
+# OpenAI Integration
+openai>=1.0.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Text Processing
+tiktoken>=0.5.0
+
+# Environment Management
+python-dotenv>=1.0.0
+
+# HTTP Requests
+requests>=2.31.0
+
+# JSON Processing
+orjson>=3.9.0
+
+# Logging and Monitoring
+structlog>=23.1.0
+
+# Development and Testing
+pytest>=7.4.0
+pytest-asyncio>=0.21.0
+black>=23.7.0
+isort>=5.12.0
+
+# Optional: Jupyter for development
+jupyter>=1.0.0
+ipykernel>=6.25.0
