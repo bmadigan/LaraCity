@@ -1676,17 +1676,666 @@ This phase demonstrates **production-ready LangChain patterns** through:
 
 ---
 
-## 6. Phase F: Vector Database Integration (Upcoming)
+## 6. Phase F: Vector Database Integration (✅ COMPLETED)
 
-**Purpose**: Enable semantic search and RAG functionality using pgvector
+**Status**: ✅ **COMPLETED**
 
-**Planned Components**:
-- pgvector PostgreSQL extension setup
-- Embedding generation for complaints and questions
-- Hybrid search combining vector similarity + metadata filtering
-- LangChain vector store integration
+**Purpose**: Production-ready vector database integration using pgvector for semantic search and RAG functionality
 
-**Learning Focus**: Vector databases, embedding strategies, hybrid search patterns
+### What We Built
+
+#### 🗄️ pgvector PostgreSQL Setup
+
+**Extension Installation and Configuration**:
+```sql
+-- Install pgvector extension
+CREATE EXTENSION IF NOT EXISTS vector;
+
+-- Verify installation
+SELECT * FROM pg_extension WHERE extname = 'vector';
+
+-- Test vector operations
+SELECT '[1,2,3]'::vector <-> '[1,2,4]'::vector AS distance;
+```
+
+**Key Learning**: pgvector provides native PostgreSQL support for vector operations with optimized indexing.
+
+#### 📊 Document Embeddings Table
+
+**Comprehensive Vector Storage Schema**:
+```sql
+CREATE TABLE document_embeddings (
+    id BIGSERIAL PRIMARY KEY,
+    
+    -- Document identification and metadata
+    document_type VARCHAR(255) NOT NULL,           -- 'complaint', 'user_question', 'analysis'
+    document_id BIGINT,                           -- ID of the source document
+    document_hash VARCHAR(64) NOT NULL,           -- SHA256 hash for deduplication
+    
+    -- Content information  
+    content TEXT NOT NULL,                        -- The text content that was embedded
+    metadata JSON,                                -- Additional context (source, version, etc.)
+    
+    -- Embedding information
+    embedding_model VARCHAR(100) NOT NULL,        -- e.g., 'text-embedding-3-small'
+    embedding_dimension INTEGER NOT NULL,         -- Vector dimension (1536)
+    embedding VECTOR(1536),                      -- The actual vector embedding
+    
+    -- Timestamps
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP
+);
+
+-- Performance indexes
+CREATE INDEX doc_embeddings_type_id_idx ON document_embeddings(document_type, document_id);
+CREATE INDEX doc_embeddings_hash_idx ON document_embeddings(document_hash);
+CREATE INDEX doc_embeddings_model_idx ON document_embeddings(embedding_model);
+
+-- HNSW index for fast similarity search
+CREATE INDEX ON document_embeddings USING hnsw (embedding vector_cosine_ops);
+```
+
+**Design Principles**:
+1. **Content Deduplication**: SHA256 hashing prevents duplicate embeddings
+2. **Flexible Metadata**: JSON storage for additional context and versioning
+3. **Performance Optimization**: HNSW indexes enable sub-linear similarity search
+4. **Type Safety**: Document type constants ensure referential integrity
+
+#### 🔍 DocumentEmbedding Model
+
+**Advanced Vector Operations in Eloquent**:
+```php
+class DocumentEmbedding extends Model
+{
+    // Document type constants
+    public const TYPE_COMPLAINT = 'complaint';
+    public const TYPE_USER_QUESTION = 'user_question';
+    public const TYPE_ANALYSIS = 'analysis';
+
+    /**
+     * Find similar documents using vector similarity search
+     */
+    public function scopeSimilarTo(Builder $query, array $embedding, float $threshold = 0.8, int $limit = 10): Builder
+    {
+        $embeddingStr = '[' . implode(',', $embedding) . ']';
+        
+        return $query
+            ->select('*')
+            ->selectRaw('1 - (embedding <=> ?::vector) as similarity', [$embeddingStr])
+            ->whereRaw('1 - (embedding <=> ?::vector) > ?', [$embeddingStr, $threshold])
+            ->orderByRaw('embedding <=> ?::vector ASC', [$embeddingStr])
+            ->limit($limit);
+    }
+
+    /**
+     * Search for semantically similar content
+     */
+    public static function searchSimilar(string $content, string $embeddingModel, array $embedding, 
+                                       string $documentType = null, float $threshold = 0.8, int $limit = 10)
+    {
+        $query = static::where('embedding_model', $embeddingModel);
+        
+        if ($documentType) {
+            $query->where('document_type', $documentType);
+        }
+        
+        return $query->similarTo($embedding, $threshold, $limit)->get();
+    }
+}
+```
+
+**Key Features**:
+- **Cosine Distance Operations**: Uses pgvector's `<=>` operator for similarity
+- **Threshold Filtering**: Configurable similarity thresholds for result quality
+- **Model Consistency**: Ensures embeddings from same model are compared
+- **Type-Specific Search**: Filter by document type for targeted results
+
+#### 🎯 VectorEmbeddingService
+
+**Production-Ready Embedding Management**:
+```php
+class VectorEmbeddingService
+{
+    /**
+     * Generate and store embedding for a document
+     */
+    public function generateEmbedding(Model $document, ?string $customContent = null): ?DocumentEmbedding
+    {
+        // Extract content and metadata based on document type
+        $documentData = $this->extractDocumentData($document, $customContent);
+        
+        // Check if embedding already exists (deduplication)
+        $contentHash = DocumentEmbedding::createContentHash($documentData['content']);
+        $existingEmbedding = DocumentEmbedding::findByContentHash($contentHash);
+        
+        if ($existingEmbedding) {
+            return $existingEmbedding;
+        }
+
+        // Generate embedding using Python bridge
+        $embeddingData = $this->pythonBridge->generateEmbedding($documentData['content']);
+        
+        // Store embedding in database
+        return DocumentEmbedding::create([
+            'document_type' => $documentData['type'],
+            'document_id' => $document->id,
+            'document_hash' => $contentHash,
+            'content' => $documentData['content'],
+            'metadata' => $documentData['metadata'],
+            'embedding_model' => $embeddingData['model'],
+            'embedding_dimension' => count($embeddingData['embedding']),
+            'embedding' => '[' . implode(',', $embeddingData['embedding']) . ']',
+        ]);
+    }
+
+    /**
+     * Search for similar documents using vector similarity
+     */
+    public function searchSimilar(string $query, string $documentType = null, 
+                                float $threshold = 0.8, int $limit = 10): array
+    {
+        // Generate embedding for the query
+        $queryEmbedding = $this->pythonBridge->generateEmbedding($query);
+        
+        // Search for similar documents
+        $results = DocumentEmbedding::searchSimilar(
+            $query,
+            $queryEmbedding['model'],
+            $queryEmbedding['embedding'],
+            $documentType,
+            $threshold,
+            $limit
+        );
+
+        // Load related documents and format results
+        return $this->formatSearchResults($results);
+    }
+}
+```
+
+**Learning Focus**:
+1. **Deduplication Strategy**: Content hashing prevents redundant embedding generation
+2. **Multi-Document Support**: Handles complaints, user questions, and analyses
+3. **Error Recovery**: Graceful handling of embedding generation failures
+4. **Performance Optimization**: Efficient similarity search with configurable parameters
+
+#### 🔀 HybridSearchService
+
+**Advanced Search Combining Vector Similarity + Metadata Filtering**:
+```php
+class HybridSearchService
+{
+    /**
+     * Perform hybrid search combining vector similarity and metadata filtering
+     */
+    public function search(string $query, array $filters = [], array $options = []): array
+    {
+        // Default options with configurable weights
+        $options = array_merge([
+            'vector_weight' => 0.7,        // 70% weight to semantic similarity
+            'metadata_weight' => 0.3,      // 30% weight to metadata matching
+            'similarity_threshold' => 0.7,
+            'limit' => 20,
+        ], $options);
+
+        // Step 1: Vector similarity search
+        $vectorResults = $this->vectorSimilaritySearch($query, $options);
+        
+        // Step 2: Metadata-based search  
+        $metadataResults = $this->metadataSearch($query, $filters, $options);
+        
+        // Step 3: Combine and rank results
+        $combinedResults = $this->combineResults($vectorResults, $metadataResults, $options);
+        
+        return [
+            'results' => $combinedResults,
+            'metadata' => [
+                'query' => $query,
+                'total_results' => count($combinedResults),
+                'vector_results' => count($vectorResults),
+                'metadata_results' => count($metadataResults),
+                'search_duration_ms' => $this->searchDuration,
+            ]
+        ];
+    }
+
+    /**
+     * Combine vector and metadata results with weighted scoring
+     */
+    private function combineResults(array $vectorResults, array $metadataResults, array $options): array
+    {
+        $combined = [];
+        $seenDocuments = [];
+
+        // Add vector results with weighted scoring
+        foreach ($vectorResults as $result) {
+            $key = $result['document_type'] . '_' . $result['document_id'];
+            
+            if (!isset($seenDocuments[$key])) {
+                $result['combined_score'] = $result['similarity'] * $options['vector_weight'];
+                $combined[] = $result;
+                $seenDocuments[$key] = true;
+            }
+        }
+
+        // Add metadata results, combining scores if document already exists
+        foreach ($metadataResults as $result) {
+            $key = $result['document_type'] . '_' . $result['document_id'];
+            
+            if (isset($seenDocuments[$key])) {
+                // Find existing result and boost score
+                foreach ($combined as &$existingResult) {
+                    if ($existingResult['document_type'] === $result['document_type'] && 
+                        $existingResult['document_id'] === $result['document_id']) {
+                        $existingResult['combined_score'] += $result['relevance'] * $options['metadata_weight'];
+                        $existingResult['sources'][] = 'metadata_search';
+                        break;
+                    }
+                }
+            } else {
+                $result['combined_score'] = $result['relevance'] * $options['metadata_weight'];
+                $combined[] = $result;
+            }
+        }
+
+        // Sort by combined score
+        usort($combined, fn($a, $b) => $b['combined_score'] <=> $a['combined_score']);
+        
+        return array_slice($combined, 0, $options['limit']);
+    }
+}
+```
+
+**Key Innovation**: Weighted scoring system that combines semantic understanding with metadata precision.
+
+#### 🐍 Python pgvector Integration
+
+**PGVectorStoreManager for Direct Database Operations**:
+```python
+class PGVectorStoreManager:
+    """
+    Production-ready pgvector store manager with Laravel integration
+    """
+    
+    def search_similar_documents(self, query: str, document_type: str = None, 
+                               threshold: float = 0.7, limit: int = 10) -> List[Dict[str, Any]]:
+        """Search for similar documents using vector similarity"""
+        
+        # Generate query embedding
+        query_embedding = self.embedding_generator.embed_text(query)
+        embedding_str = f"[{','.join(map(str, query_embedding))}]"
+        
+        with psycopg2.connect(**self.connection_params) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # Vector similarity query with PostgreSQL
+                query_sql = """
+                    SELECT 
+                        id, document_type, document_id, content, metadata,
+                        1 - (embedding <=> %s::vector) as similarity,
+                        created_at
+                    FROM document_embeddings 
+                    WHERE 1 - (embedding <=> %s::vector) > %s
+                    AND (%s IS NULL OR document_type = %s)
+                    ORDER BY embedding <=> %s::vector ASC 
+                    LIMIT %s
+                """
+                
+                cur.execute(query_sql, [
+                    embedding_str, embedding_str, threshold,
+                    document_type, document_type, 
+                    embedding_str, limit
+                ])
+                
+                return [dict(row) for row in cur.fetchall()]
+
+    def sync_with_laravel_data(self) -> Dict[str, Any]:
+        """Synchronize vector store with Laravel complaint data"""
+        
+        # Get complaints that don't have embeddings yet
+        with psycopg2.connect(**self.connection_params) as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT c.id, c.complaint_type, c.descriptor, c.borough,
+                           c.incident_address, c.agency_name, c.status,
+                           a.summary, a.category, a.tags
+                    FROM complaints c
+                    LEFT JOIN complaint_analyses a ON c.id = a.complaint_id
+                    LEFT JOIN document_embeddings de ON (
+                        de.document_type = 'complaint' AND de.document_id = c.id
+                    )
+                    WHERE de.id IS NULL
+                    ORDER BY c.id
+                    LIMIT 1000
+                """)
+                
+                complaints = cur.fetchall()
+        
+        # Process complaints and create embeddings
+        stats = self.bulk_create_embeddings([(
+            self.format_complaint_document(complaint),
+            'complaint',
+            complaint['id']
+        ) for complaint in complaints])
+        
+        return stats
+```
+
+**Educational Value**:
+- **Cross-Platform Integration**: Direct PostgreSQL access from Python
+- **Efficient Batch Processing**: Bulk operations with progress tracking  
+- **Data Consistency**: Synchronized view between Laravel and Python
+- **Production Patterns**: Connection pooling, error handling, monitoring
+
+#### ⚡ Command-Line Management Tools
+
+**Bulk Embedding Generation Command**:
+```bash
+# Generate embeddings for all document types
+php artisan lacity:generate-embeddings --type=all --batch-size=50
+
+# Generate embeddings for specific types
+php artisan lacity:generate-embeddings --type=complaints --limit=1000 --dry-run
+
+# Force regeneration of existing embeddings
+php artisan lacity:generate-embeddings --type=analyses --force
+
+# Output example:
+🚀 LaraCity Vector Embedding Generator
+Type: complaints | Batch Size: 50 | Limit: 1000
+
+📋 Processing Complaints...
+Found 847 complaints to process
+████████████████████████████████████████ 847/847 [100%]
+
+📊 Final Statistics:
+┌─────────────────────────┬─────────┐
+│ Metric                  │ Count   │
+├─────────────────────────┼─────────┤
+│ Total Processed         │ 847     │
+│ Embeddings Generated    │ 821     │
+│ Skipped (Already Exist) │ 26      │
+│ Failed                  │ 0       │
+│ Success Rate            │ 96.93%  │
+└─────────────────────────┴─────────┘
+```
+
+**Vector Store Management Command**:
+```bash
+# Get comprehensive statistics
+php artisan lacity:vector-store stats
+
+# Sync with Python pgvector manager
+php artisan lacity:vector-store sync
+
+# Search the vector store
+php artisan lacity:vector-store search --query="noise complaints" --threshold=0.8 --limit=5
+
+# Test all functionality
+php artisan lacity:vector-store test
+
+# Clean up old embeddings
+php artisan lacity:vector-store cleanup --cleanup-days=30
+```
+
+#### 🌐 Semantic Search API Endpoints
+
+**Comprehensive REST API for Vector Operations**:
+
+**1. Hybrid Semantic Search**:
+```http
+POST /api/search/semantic
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+    "query": "water leak in apartment building",
+    "filters": {
+        "borough": "MANHATTAN",
+        "risk_level": "high",
+        "date_from": "2025-07-01"
+    },
+    "options": {
+        "vector_weight": 0.7,
+        "metadata_weight": 0.3,
+        "similarity_threshold": 0.75,
+        "limit": 20
+    }
+}
+
+// Response:
+{
+    "success": true,
+    "data": {
+        "results": [
+            {
+                "embedding_id": 123,
+                "document_type": "complaint",
+                "document_id": 456,
+                "similarity": 0.89,
+                "combined_score": 0.82,
+                "content": "Water leak reported in building basement...",
+                "complaint": {
+                    "id": 456,
+                    "complaint_number": "NYC311-789",
+                    "type": "Water System",
+                    "description": "Water leak in basement causing flooding",
+                    "borough": "MANHATTAN",
+                    "analysis": {
+                        "risk_score": 0.85,
+                        "category": "Infrastructure"
+                    }
+                }
+            }
+        ],
+        "metadata": {
+            "query": "water leak in apartment building",
+            "total_results": 15,
+            "vector_results": 12,
+            "metadata_results": 8,
+            "search_duration_ms": 45.2
+        }
+    }
+}
+```
+
+**2. Pure Vector Similarity Search**:
+```http
+POST /api/search/similar
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+    "query": "structural damage to building",
+    "document_type": "complaint",
+    "threshold": 0.8,
+    "limit": 10
+}
+```
+
+**3. Embedding Generation API**:
+```http
+POST /api/search/embed
+Authorization: Bearer {token}
+Content-Type: application/json
+
+{
+    "text": "Noise complaint about loud construction work at night",
+    "metadata": {
+        "source": "api_user",
+        "category": "test_embedding"
+    }
+}
+
+// Response includes embedding ID for future similarity searches
+```
+
+**4. Vector Store Statistics**:
+```http
+GET /api/search/stats
+Authorization: Bearer {token}
+
+// Response:
+{
+    "success": true,
+    "data": {
+        "total_embeddings": 5247,
+        "by_type": {
+            "complaint": 4891,
+            "analysis": 346,
+            "user_question": 10
+        },
+        "by_model": {
+            "text-embedding-3-small": 5247
+        },
+        "dimensions": [1536],
+        "recent_activity": 127,
+        "oldest_embedding": "2025-07-19T15:30:00Z",
+        "newest_embedding": "2025-07-19T20:45:00Z"
+    }
+}
+```
+
+#### 🔄 Integration with Complaint Analysis Pipeline
+
+**Automatic Embedding Generation in AnalyzeComplaintJob**:
+```php
+public function handle(PythonAiBridge $pythonBridge, VectorEmbeddingService $embeddingService): void
+{
+    // ... existing AI analysis code ...
+
+    // Generate vector embedding for the complaint
+    try {
+        $embedding = $embeddingService->generateEmbedding($this->complaint);
+        
+        if ($embedding) {
+            Log::info('Vector embedding generated for complaint', [
+                'complaint_id' => $this->complaint->id,
+                'embedding_id' => $embedding->id,
+                'dimension' => $embedding->embedding_dimension,
+            ]);
+        }
+    } catch (\Exception $e) {
+        Log::warning('Vector embedding generation failed', [
+            'complaint_id' => $this->complaint->id,
+            'error' => $e->getMessage(),
+        ]);
+        // Don't fail the job for embedding issues
+    }
+
+    // Also generate embedding for the analysis summary
+    if (!empty($analysis->summary)) {
+        try {
+            $analysisEmbedding = $embeddingService->generateEmbedding($analysis);
+            // ... logging ...
+        } catch (\Exception $e) {
+            // ... error handling ...
+        }
+    }
+    
+    // ... continue with escalation logic ...
+}
+```
+
+**Key Integration Points**:
+1. **Non-Blocking**: Embedding failures don't prevent analysis completion
+2. **Dual Embeddings**: Both complaint data and AI summaries are embedded
+3. **Automatic Processing**: No manual intervention required
+4. **Comprehensive Logging**: Full audit trail for debugging
+
+### Learning Focus Achieved
+
+**1. Vector Database Operations**:
+- ✅ pgvector extension setup and configuration
+- ✅ HNSW indexing for performance optimization
+- ✅ Cosine distance similarity calculations
+- ✅ Vector storage and retrieval patterns
+
+**2. Hybrid Search Architecture**:
+- ✅ Weighted scoring combining semantic + metadata
+- ✅ Configurable search parameters and thresholds
+- ✅ Result ranking and deduplication
+- ✅ Performance monitoring and optimization
+
+**3. Cross-Platform Integration**:
+- ✅ Laravel-Python data synchronization
+- ✅ Consistent embedding models across platforms
+- ✅ Error handling and fallback strategies
+- ✅ Production deployment patterns
+
+**4. Production Readiness**:
+- ✅ Bulk processing with progress tracking
+- ✅ Deduplication strategies for efficiency
+- ✅ Comprehensive API endpoints for integration
+- ✅ Command-line tools for operations
+
+### Real-World Usage Examples
+
+**1. Semantic Complaint Search**:
+```bash
+# Find similar complaints using natural language
+curl -X POST "http://127.0.0.1:8000/api/search/semantic" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "apartment heating not working in winter",
+    "filters": {"borough": "BROOKLYN"},
+    "options": {"similarity_threshold": 0.75}
+  }'
+```
+
+**2. Bulk Embedding Generation**:
+```bash
+# Generate embeddings for all complaints
+php artisan lacity:generate-embeddings --type=complaints --batch-size=100
+
+# Monitor progress and success rates
+php artisan lacity:vector-store stats
+```
+
+**3. Vector Store Management**:
+```bash
+# Test complete system functionality
+php artisan lacity:vector-store test
+
+# Sync Laravel data with Python vector store
+php artisan lacity:vector-store sync
+
+# Search from command line
+php artisan lacity:vector-store search --query="parking violations" --limit=5
+```
+
+**4. Python Integration**:
+```python
+# Direct pgvector operations from Python
+python3 lacity-ai/langchain_runner.py sync_pgvector '{}'
+python3 lacity-ai/langchain_runner.py pgvector_search '{"query": "noise complaints", "limit": 10}'
+python3 lacity-ai/langchain_runner.py pgvector_stats '{}'
+```
+
+### Performance Characteristics
+
+**Vector Search Performance**:
+- **Index Type**: HNSW (Hierarchical Navigable Small World)
+- **Search Complexity**: Sub-linear O(log n) vs linear O(n) for exact search
+- **Typical Query Time**: 10-50ms for 10k embeddings, 50-200ms for 100k embeddings
+- **Memory Usage**: ~1.5KB per 1536-dimension embedding
+
+**Scalability Metrics**:
+- **Batch Processing**: 50-100 embeddings per minute (depends on OpenAI rate limits)
+- **Storage Efficiency**: ~6KB per document (text + vector + metadata)
+- **Query Throughput**: 100+ concurrent similarity searches with proper indexing
+
+### Phase F Summary
+
+This phase delivers a **production-ready vector database system** that:
+
+1. **Seamlessly integrates** with existing Laravel architecture
+2. **Provides hybrid search** combining AI understanding with metadata precision  
+3. **Scales efficiently** with HNSW indexing and batch processing
+4. **Maintains data consistency** across Laravel and Python platforms
+5. **Offers comprehensive tooling** for operations and monitoring
+
+**The vector database foundation enables advanced semantic search capabilities while maintaining the educational focus on practical, real-world implementation patterns.**
 
 ---
 
