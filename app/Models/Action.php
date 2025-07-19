@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -11,17 +13,18 @@ class Action extends Model
     use HasFactory;
     
     // Action type constants
-    const TYPE_ESCALATE = 'escalate';
-    const TYPE_SUMMARIZE = 'summarize';
-    const TYPE_NOTIFY = 'notify';
-    const TYPE_ANALYZE = 'analyze';
+    public const TYPE_ESCALATE = 'escalate';
+    public const TYPE_SUMMARIZE = 'summarize';
+    public const TYPE_NOTIFY = 'notify';
+    public const TYPE_ANALYZE = 'analyze';
     
-    protected $fillable = [
-        'type',
-        'parameters',
-        'triggered_by',
-        'complaint_id',
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // Use Model::unguard() instead of $fillable as per .cursor rules
+        static::unguard();
+    }
     
     protected $casts = [
         'parameters' => 'array',

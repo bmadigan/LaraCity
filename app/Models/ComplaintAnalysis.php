@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -10,13 +12,13 @@ class ComplaintAnalysis extends Model
 {
     use HasFactory;
     
-    protected $fillable = [
-        'complaint_id',
-        'summary',
-        'risk_score',
-        'category',
-        'tags',
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // Use Model::unguard() instead of $fillable as per .cursor rules
+        static::unguard();
+    }
     
     protected $casts = [
         'risk_score' => 'decimal:2',

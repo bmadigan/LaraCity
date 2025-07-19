@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -9,56 +11,31 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 class Complaint extends Model
 {
     // Status constants
-    const STATUS_OPEN = 'Open';
-    const STATUS_IN_PROGRESS = 'InProgress';
-    const STATUS_CLOSED = 'Closed';
-    const STATUS_ESCALATED = 'Escalated';
+    public const STATUS_OPEN = 'Open';
+    public const STATUS_IN_PROGRESS = 'InProgress';
+    public const STATUS_CLOSED = 'Closed';
+    public const STATUS_ESCALATED = 'Escalated';
     
     // Priority constants
-    const PRIORITY_LOW = 'Low';
-    const PRIORITY_MEDIUM = 'Medium';
-    const PRIORITY_HIGH = 'High';
-    const PRIORITY_CRITICAL = 'Critical';
+    public const PRIORITY_LOW = 'Low';
+    public const PRIORITY_MEDIUM = 'Medium';
+    public const PRIORITY_HIGH = 'High';
+    public const PRIORITY_CRITICAL = 'Critical';
     
     // Borough constants
-    const BOROUGH_MANHATTAN = 'MANHATTAN';
-    const BOROUGH_BROOKLYN = 'BROOKLYN';
-    const BOROUGH_QUEENS = 'QUEENS';
-    const BOROUGH_BRONX = 'BRONX';
-    const BOROUGH_STATEN_ISLAND = 'STATEN ISLAND';
+    public const BOROUGH_MANHATTAN = 'MANHATTAN';
+    public const BOROUGH_BROOKLYN = 'BROOKLYN';
+    public const BOROUGH_QUEENS = 'QUEENS';
+    public const BOROUGH_BRONX = 'BRONX';
+    public const BOROUGH_STATEN_ISLAND = 'STATEN ISLAND';
     
-    protected $fillable = [
-        'complaint_number',
-        'complaint_type',
-        'descriptor',
-        'agency',
-        'agency_name',
-        'borough',
-        'city',
-        'incident_address',
-        'street_name',
-        'cross_street_1',
-        'cross_street_2',
-        'incident_zip',
-        'address_type',
-        'latitude',
-        'longitude',
-        'location_type',
-        'status',
-        'resolution_description',
-        'priority',
-        'community_board',
-        'council_district',
-        'police_precinct',
-        'school_district',
-        'submitted_at',
-        'resolved_at',
-        'due_date',
-        'facility_type',
-        'park_facility_name',
-        'vehicle_type',
-        'embedding'
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // Use Model::unguard() instead of $fillable as per .cursor rules
+        static::unguard();
+    }
     
     protected $casts = [
         'submitted_at' => 'datetime',

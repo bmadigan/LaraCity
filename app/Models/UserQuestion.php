@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
@@ -7,14 +9,13 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserQuestion extends Model
 {
-    protected $fillable = [
-        'question',
-        'parsed_filters',
-        'ai_response',
-        'embedding',
-        'conversation_id',
-        'user_id',
-    ];
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+        
+        // Use Model::unguard() instead of $fillable as per .cursor rules
+        static::unguard();
+    }
     
     protected $casts = [
         'parsed_filters' => 'array',

@@ -1,8 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Console\Commands;
 
-use App\Services\CsvImportService;
+use App\Actions\Complaints\ImportCsvData;
 use Illuminate\Console\Command;
 
 class ImportCsvCommand extends Command
@@ -26,7 +28,7 @@ class ImportCsvCommand extends Command
     /**
      * Execute the console command.
      */
-    public function handle(CsvImportService $importService)
+    public function handle()
     {
         $filePath = $this->option('file');
         $validate = $this->option('validate');
@@ -54,7 +56,7 @@ class ImportCsvCommand extends Command
         try {
             $startTime = microtime(true);
 
-            $summary = $importService->import($filePath, $validate);
+            $summary = ImportCsvData::run($filePath, $validate);
 
             $endTime = microtime(true);
             $duration = round($endTime - $startTime, 2);

@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Database\Seeders;
 
+use App\Actions\Complaints\CreateComplaintAnalysis;
+use App\Actions\Complaints\CreateAction;
 use App\Models\Action;
 use App\Models\Complaint;
 use App\Models\ComplaintAnalysis;
@@ -167,13 +171,7 @@ class DatabaseSeeder extends Seeder
             // Generate risk-appropriate analysis based on complaint type
             $analysis = $this->generateAnalysisForComplaint($complaint);
             
-            ComplaintAnalysis::create([
-                'complaint_id' => $complaint->id,
-                'summary' => $analysis['summary'],
-                'risk_score' => $analysis['risk_score'],
-                'category' => $analysis['category'],
-                'tags' => $analysis['tags'],
-            ]);
+            CreateComplaintAnalysis::run($complaint, $analysis);
             
             $analysisCount++;
         }
