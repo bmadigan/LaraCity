@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Complaint;
 use App\Models\ComplaintAnalysis;
 use App\Services\PythonAiBridge;
+use App\Services\VectorEmbeddingService;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Queue\InteractsWithQueue;
@@ -32,7 +33,7 @@ class AnalyzeComplaintJob implements ShouldQueue
     /**
      * Execute the job.
      */
-    public function handle(PythonAiBridge $pythonBridge): void
+    public function handle(PythonAiBridge $pythonBridge, VectorEmbeddingService $embeddingService): void
     {
         Log::info('Starting AI analysis for complaint', [
             'complaint_id' => $this->complaint->id,
@@ -78,6 +79,50 @@ class AnalyzeComplaintJob implements ShouldQueue
                 'risk_score' => $analysis->risk_score,
                 'category' => $analysis->category,
             ]);
+
+            // Generate vector embedding for the complaint
+            try {
+                $embedding = $embeddingService->generateEmbedding($this->complaint);
+                
+                if ($embedding) {
+                    Log::info('Vector embedding generated for complaint', [
+                        'complaint_id' => $this->complaint->id,
+                        'embedding_id' => $embedding->id,
+                        'dimension' => $embedding->embedding_dimension,
+                    ]);
+                } else {
+                    Log::warning('Failed to generate vector embedding for complaint', [
+                        'complaint_id' => $this->complaint->id,
+                    ]);
+                }
+            } catch (\Exception $e) {
+                Log::warning('Vector embedding generation failed', [
+                    'complaint_id' => $this->complaint->id,
+                    'error' => $e->getMessage(),
+                ]);
+                // Don't fail the job for embedding issues
+            }
+
+            // Also generate embedding for the analysis summary if available
+            if (!empty($analysis->summary)) {
+                try {
+                    $analysisEmbedding = $embeddingService->generateEmbedding($analysis);
+                    
+                    if ($analysisEmbedding) {
+                        Log::info('Vector embedding generated for analysis', [
+                            'complaint_id' => $this->complaint->id,
+                            'analysis_id' => $analysis->id,
+                            'embedding_id' => $analysisEmbedding->id,
+                        ]);
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Analysis embedding generation failed', [
+                        'complaint_id' => $this->complaint->id,
+                        'analysis_id' => $analysis->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
 
             // Check if escalation is needed
             if ($analysis->risk_score >= config('complaints.escalate_threshold', 0.7)) {

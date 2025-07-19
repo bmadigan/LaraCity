@@ -108,18 +108,18 @@ class PythonAiBridge
     }
 
     /**
-     * Generate embeddings for text using Python AI bridge
+     * Generate embedding for text using Python AI bridge
      */
-    public function generateEmbeddings(string $text): array
+    public function generateEmbedding(string $text): array
     {
-        Log::info('Generating embeddings via Python AI bridge', [
+        Log::info('Generating embedding via Python AI bridge', [
             'text_length' => strlen($text),
         ]);
 
         $command = [
             'python3',
             $this->scriptPath,
-            'generate_embeddings',
+            'create_embeddings',
             json_encode(['text' => $text])
         ];
 
@@ -139,18 +139,115 @@ class PythonAiBridge
                 throw new \RuntimeException('Invalid JSON response from Python embeddings: ' . json_last_error_msg());
             }
 
-            if (!isset($result['embeddings']) || !is_array($result['embeddings'])) {
-                throw new \RuntimeException('Invalid embeddings format returned from Python');
+            if (!isset($result['data']['embedding']) || !is_array($result['data']['embedding'])) {
+                throw new \RuntimeException('Invalid embedding format returned from Python');
             }
 
-            Log::info('Embeddings generated successfully', [
-                'embedding_dimension' => count($result['embeddings']),
+            Log::info('Embedding generated successfully', [
+                'embedding_dimension' => count($result['data']['embedding']),
+                'model' => $result['data']['model'] ?? 'unknown'
             ]);
 
-            return $result['embeddings'];
+            return [
+                'embedding' => $result['data']['embedding'],
+                'model' => $result['data']['model'] ?? 'text-embedding-3-small',
+                'dimension' => count($result['data']['embedding'])
+            ];
 
         } catch (\Exception $e) {
-            Log::error('Failed to generate embeddings', [
+            Log::error('Failed to generate embedding', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Search documents using vector similarity
+     */
+    public function vectorSearch(string $query, array $options = []): array
+    {
+        Log::info('Performing vector search via Python AI bridge', [
+            'query_length' => strlen($query),
+            'options' => $options
+        ]);
+
+        $command = [
+            'python3',
+            $this->scriptPath,
+            'search_documents',
+            json_encode([
+                'query' => $query,
+                'options' => $options
+            ])
+        ];
+
+        try {
+            $process = new Process($command);
+            $process->setTimeout($this->timeout);
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            $output = trim($process->getOutput());
+            $result = json_decode($output, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \RuntimeException('Invalid JSON response from Python vector search: ' . json_last_error_msg());
+            }
+
+            Log::info('Vector search completed', [
+                'results_count' => count($result['data']['results'] ?? [])
+            ]);
+
+            return $result['data'] ?? [];
+
+        } catch (\Exception $e) {
+            Log::error('Vector search failed', [
+                'error' => $e->getMessage(),
+            ]);
+            throw $e;
+        }
+    }
+
+    /**
+     * Sync vector store with pgvector database
+     */
+    public function syncPgVectorStore(): array
+    {
+        Log::info('Syncing vector store with pgvector');
+
+        $command = [
+            'python3',
+            $this->scriptPath,
+            'sync_pgvector',
+            json_encode([])
+        ];
+
+        try {
+            $process = new Process($command);
+            $process->setTimeout($this->timeout * 2); // Longer timeout for sync operations
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            $output = trim($process->getOutput());
+            $result = json_decode($output, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                throw new \RuntimeException('Invalid JSON response from Python vector sync: ' . json_last_error_msg());
+            }
+
+            Log::info('Vector store sync completed', $result['data'] ?? []);
+
+            return $result['data'] ?? [];
+
+        } catch (\Exception $e) {
+            Log::error('Vector store sync failed', [
                 'error' => $e->getMessage(),
             ]);
             throw $e;

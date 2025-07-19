@@ -39,6 +39,7 @@ from chains.rag_chain import rag_chain
 from chains.chat_chain import chat_chain
 from rag.document_loader import complaint_document_loader
 from rag.vector_store import vector_store_manager
+from rag.pgvector_store import PGVectorStoreManager
 from rag.retriever import complaint_retriever
 from models.embeddings import embedding_generator
 
@@ -70,9 +71,20 @@ class LangChainRunner:
             'create_embeddings': self.create_embeddings,
             'create_vector_store': self.create_vector_store,
             'search_documents': self.search_documents,
+            'sync_pgvector': self.sync_pgvector,
+            'pgvector_search': self.pgvector_search,
+            'pgvector_stats': self.pgvector_stats,
             'health_check': self.health_check,
             'get_stats': self.get_stats
         }
+        
+        # Initialize pgvector manager
+        try:
+            self.pgvector_manager = PGVectorStoreManager()
+            logger.info("PGVector manager initialized successfully")
+        except Exception as e:
+            logger.warning("Failed to initialize PGVector manager", error=str(e))
+            self.pgvector_manager = None
         
         logger.info("LangChainRunner initialized",
                    available_operations=list(self.operations.keys()))
@@ -466,6 +478,112 @@ class LangChainRunner:
             stats['components']['chat'] = {'error': str(e)}
         
         return stats
+    
+    def sync_pgvector(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Synchronize pgvector store with Laravel data
+        
+        Educational Focus:
+        - Cross-platform data synchronization
+        - ETL patterns for vector data
+        - Progress tracking and error handling
+        """
+        logger.info("Starting pgvector synchronization")
+        
+        if not self.pgvector_manager:
+            return self._error_response("PGVector manager not available")
+        
+        try:
+            sync_stats = self.pgvector_manager.sync_with_laravel_data()
+            
+            logger.info("PGVector sync completed", **sync_stats)
+            
+            return self._success_response({
+                'sync_completed': True,
+                'statistics': sync_stats,
+                'message': f"Processed {sync_stats.get('complaints_processed', 0)} complaints, "
+                          f"created {sync_stats.get('embeddings_created', 0)} embeddings"
+            })
+        
+        except Exception as e:
+            logger.error("PGVector sync failed", error=str(e))
+            return self._error_response(f"Sync failed: {str(e)}")
+    
+    def pgvector_search(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Search documents using pgvector similarity
+        
+        Educational Focus:
+        - Vector similarity search
+        - PostgreSQL vector operations
+        - Result ranking and filtering
+        """
+        query = data.get('query', '')
+        document_type = data.get('document_type')
+        threshold = data.get('threshold', 0.7)
+        limit = data.get('limit', 10)
+        
+        logger.info("Starting pgvector search", 
+                   query_length=len(query),
+                   document_type=document_type,
+                   threshold=threshold)
+        
+        if not self.pgvector_manager:
+            return self._error_response("PGVector manager not available")
+        
+        if not query:
+            return self._error_response("Query text required")
+        
+        try:
+            results = self.pgvector_manager.search_similar_documents(
+                query=query,
+                document_type=document_type,
+                threshold=threshold,
+                limit=limit
+            )
+            
+            logger.info("PGVector search completed", results_count=len(results))
+            
+            return self._success_response({
+                'results': results,
+                'query': query,
+                'search_params': {
+                    'document_type': document_type,
+                    'threshold': threshold,
+                    'limit': limit
+                },
+                'total_results': len(results)
+            })
+        
+        except Exception as e:
+            logger.error("PGVector search failed", error=str(e))
+            return self._error_response(f"Search failed: {str(e)}")
+    
+    def pgvector_stats(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Get pgvector store statistics
+        
+        Educational Focus:
+        - Vector store monitoring
+        - Database statistics
+        - Performance metrics
+        """
+        logger.debug("Getting pgvector statistics")
+        
+        if not self.pgvector_manager:
+            return self._error_response("PGVector manager not available")
+        
+        try:
+            stats = self.pgvector_manager.get_statistics()
+            
+            logger.info("Retrieved pgvector statistics", 
+                       total_embeddings=stats.get('total_embeddings', 0))
+            
+            return self._success_response(stats)
+        
+        except Exception as e:
+            logger.error("Failed to get pgvector statistics", error=str(e))
+            return self._error_response(f"Statistics retrieval failed: {str(e)}")
     
     def _success_response(self, data: Any) -> Dict[str, Any]:
         """Format successful response"""

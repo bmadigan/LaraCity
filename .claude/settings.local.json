@@ -12,7 +12,9 @@
       "Bash(composer:*)",
       "Bash(mv:*)",
       "Bash(python3:*)",
-      "Bash(chmod:*)"
+      "Bash(chmod:*)",
+      "Bash(psql:*)",
+      "Bash(grep:*)"
     ],
     "deny": []
   }

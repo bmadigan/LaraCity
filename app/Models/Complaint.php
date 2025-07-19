@@ -58,6 +58,12 @@ class Complaint extends Model
         return $this->hasMany(Action::class);
     }
     
+    public function embeddings(): HasMany
+    {
+        return $this->hasMany(DocumentEmbedding::class, 'document_id')
+                    ->where('document_type', DocumentEmbedding::TYPE_COMPLAINT);
+    }
+    
     // Helper methods
     public static function getStatuses(): array
     {
