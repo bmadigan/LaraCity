@@ -38,6 +38,9 @@ class DatabaseSeeder extends Seeder
         // Create sample user questions for chat/RAG system
         $this->seedUserQuestions();
         
+        // Ensure we have minimum data for dashboard demo
+        $this->call(DashboardDemoSeeder::class);
+        
         $this->command->info('✅ Database seeding completed!');
         $this->displaySeedingSummary();
     }

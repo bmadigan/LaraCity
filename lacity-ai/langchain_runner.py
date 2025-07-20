@@ -43,12 +43,19 @@ from rag.pgvector_store import PGVectorStoreManager
 from rag.retriever import complaint_retriever
 from models.embeddings import embedding_generator
 
-# Configure logging
-if STRUCTLOG_AVAILABLE:
-    logger = structlog.get_logger(__name__)
-else:
-    logging.basicConfig(level=logging.INFO)
-    logger = logging.getLogger(__name__)
+# Configure logging to stderr (so it doesn't interfere with JSON output on stdout)
+import logging
+logging.basicConfig(
+    level=logging.WARNING,  # Set to WARNING to reduce log output during JSON operations
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    stream=sys.stderr  # Important: send logs to stderr, not stdout
+)
+
+# Disable verbose logging for embedding operations to ensure clean JSON output
+logging.getLogger().setLevel(logging.WARNING)
+
+# Use standard logging instead of structlog to avoid configuration issues
+logger = logging.getLogger(__name__)
 
 
 class LangChainRunner:
@@ -245,7 +252,7 @@ class LangChainRunner:
         if texts:
             logger.debug("Creating embeddings for texts",
                         text_count=len(texts))
-            embeddings = embedding_generator.embed_documents(texts)
+            embeddings = embedding_generator.embeddings.embed_documents(texts)
         
         elif complaints:
             logger.debug("Creating embeddings for complaints",
@@ -256,7 +263,7 @@ class LangChainRunner:
             
             # Extract text content
             complaint_texts = [doc.page_content for doc in documents]
-            embeddings = embedding_generator.embed_documents(complaint_texts)
+            embeddings = embedding_generator.embeddings.embed_documents(complaint_texts)
         
         return {
             'embeddings': embeddings,
