@@ -12,13 +12,41 @@ use Illuminate\View\View;
 use Livewire\Attributes\On;
 use Livewire\Component;
 
+/**
+ * AI-powered chat agent for natural language queries about complaint data.
+ *
+ * This component intelligently routes user questions to the appropriate handler:
+ * statistical queries go to database aggregation, search queries use vector
+ * similarity, and general conversation routes to the AI bridge.
+ */
 class ChatAgent extends Component
 {
+    /**
+     * The conversation history as an array of message objects.
+     */
     public array $messages = [];
+
+    /**
+     * The current user input being typed.
+     */
     public string $userMessage = '';
+
+    /**
+     * Whether we're currently processing a user message.
+     */
     public bool $isProcessing = false;
+
+    /**
+     * Unique identifier for this chat session.
+     */
     public string $sessionId;
     
+    /**
+     * Livewire event listeners for real-time chat functionality.
+     *
+     * These handle streaming responses and error states for a more
+     * interactive chat experience.
+     */
     protected $listeners = [
         'messageReceived' => 'addMessage',
         'chatResponseChunk' => 'handleResponseChunk',
@@ -26,9 +54,15 @@ class ChatAgent extends Component
         'chatResponseError' => 'handleResponseError'
     ];
 
+    /**
+     * Initialize the chat session with a unique ID and welcome message.
+     */
     public function mount(): void
     {
+        // Generate a unique session ID for this user's chat session
         $this->sessionId = 'chat-' . auth()->id() . '-' . uniqid();
+        
+        // Start with a friendly welcome message that explains capabilities
         $this->messages = [
             [
                 'role' => 'assistant',
@@ -38,9 +72,15 @@ class ChatAgent extends Component
         ];
     }
 
+    /**
+     * Process and send a user message to the AI chat agent.
+     *
+     * This handles the complete message flow: validation, adding to chat history,
+     * and routing to the appropriate AI handler based on query type.
+     */
     public function sendMessage(): void
     {
-        // Validate input
+        // Ensure we have valid input before processing
         $this->validate([
             'userMessage' => 'required|string|max:1000'
         ]);
@@ -49,7 +89,7 @@ class ChatAgent extends Component
             return;
         }
 
-        // Add user message to chat
+        // Add the user's message to our conversation history
         $this->messages[] = [
             'role' => 'user',
             'content' => trim($this->userMessage),
@@ -57,19 +97,19 @@ class ChatAgent extends Component
         ];
 
         $userMessage = trim($this->userMessage);
-        $this->userMessage = '';
+        $this->userMessage = '';  // Clear input for next message
         $this->isProcessing = true;
 
-        // Add placeholder for assistant response
+        // Create a placeholder response that we'll update with the AI's answer
         $responseIndex = count($this->messages);
         $this->messages[] = [
             'role' => 'assistant',
             'content' => '',
             'timestamp' => now()->toISOString(),
-            'isStreaming' => true,
+            'isStreaming' => true,  // Shows loading indicator
         ];
 
-        // Process message directly for simplicity
+        // Route the message to the appropriate AI handler
         $this->processMessage($userMessage, $responseIndex);
     }
 
@@ -148,12 +188,19 @@ class ChatAgent extends Component
         return $this->messages;
     }
 
+    /**
+     * Intelligently route user messages to the appropriate handler.
+     *
+     * The key insight here is that different types of questions require
+     * fundamentally different approaches: statistics need database aggregation,
+     * searches need vector similarity, and conversations need AI reasoning.
+     */
     private function processMessage(string $message, int $responseIndex): void
     {
         try {
             $response = '';
             
-            // Route to appropriate handler
+            // Route based on query intent rather than trying one-size-fits-all
             if ($this->isStatisticalQuery($message)) {
                 $response = $this->handleStatisticalQuery($message);
             } elseif ($this->isComplaintQuery($message)) {
@@ -162,14 +209,14 @@ class ChatAgent extends Component
                 $response = $this->handleGeneralQuery($message);
             }
             
-            // Update the message with the response
+            // Replace the placeholder with the actual response
             if (isset($this->messages[$responseIndex])) {
                 $this->messages[$responseIndex]['content'] = $response;
                 unset($this->messages[$responseIndex]['isStreaming']);
             }
             
         } catch (\Exception $e) {
-            // Handle error
+            // Graceful degradation - show a helpful error instead of breaking
             if (isset($this->messages[$responseIndex])) {
                 $this->messages[$responseIndex]['content'] = "I apologize, but I encountered an error while processing your message. Please try again.";
                 $this->messages[$responseIndex]['isError'] = true;
@@ -181,6 +228,12 @@ class ChatAgent extends Component
         $this->dispatch('scroll-to-bottom');
     }
     
+    /**
+     * Determine if the user wants to search for specific complaints.
+     *
+     * These queries should use vector similarity to find individual
+     * complaints that match the user's criteria.
+     */
     private function isComplaintQuery(string $message): bool
     {
         $searchKeywords = ['search', 'find', 'show me complaints', 'list complaints', 'graffiti', 'noise', 'water'];
@@ -195,6 +248,12 @@ class ChatAgent extends Component
         return false;
     }
     
+    /**
+     * Determine if the user wants statistical analysis of the data.
+     *
+     * These queries should use database aggregation to provide summaries,
+     * counts, and breakdowns rather than individual complaint records.
+     */
     private function isStatisticalQuery(string $message): bool
     {
         $statsKeywords = ['most common', 'how many', 'statistics', 'count', 'total', 'percentage', 'breakdown', 'distribution', 'trends'];
@@ -209,27 +268,31 @@ class ChatAgent extends Component
         return false;
     }
     
+    /**
+     * Handle requests for statistical analysis using database aggregation.
+     *
+     * Rather than searching for specific complaints, this generates summaries
+     * and insights from the entire dataset using SQL aggregation functions.
+     */
     private function handleStatisticalQuery(string $message): string
     {
         try {
             $lowerMessage = strtolower($message);
             
-            // Most common complaint types
+            // Route to the most specific handler first
             if (str_contains($lowerMessage, 'most common') && str_contains($lowerMessage, 'complaint type')) {
                 return $this->getMostCommonComplaintTypes();
             }
             
-            // Complaint counts by borough
             if (str_contains($lowerMessage, 'borough') && (str_contains($lowerMessage, 'how many') || str_contains($lowerMessage, 'count'))) {
                 return $this->getComplaintsByBorough();
             }
             
-            // Risk level distribution
             if (str_contains($lowerMessage, 'risk') && (str_contains($lowerMessage, 'distribution') || str_contains($lowerMessage, 'breakdown'))) {
                 return $this->getRiskLevelDistribution();
             }
             
-            // General statistics
+            // Fallback to general statistics for unmatched statistical queries
             return $this->getGeneralStatistics();
             
         } catch (\Exception $e) {
@@ -241,16 +304,22 @@ class ChatAgent extends Component
         }
     }
     
+    /**
+     * Handle searches for specific complaints using vector similarity.
+     *
+     * This leverages our hybrid search system to find individual complaints
+     * that semantically match the user's query, rather than aggregate data.
+     */
     private function handleComplaintQuery(string $message): string
     {
         try {
             $searchService = app(HybridSearchService::class);
             $results = $searchService->search($message, [], [
                 'limit' => 5,
-                'similarity_threshold' => 0.6
+                'similarity_threshold' => 0.6  // Reasonable threshold for chat queries
             ]);
             
-            // Log the results for debugging
+            // Log search metrics for monitoring and debugging
             \Log::info('ChatAgent search results', [
                 'query' => $message,
                 'results_count' => count($results['results'] ?? []),
@@ -266,13 +335,20 @@ class ChatAgent extends Component
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            // Graceful fallback to general AI handling if search fails
             return $this->handleGeneralQuery($message);
         }
     }
     
+    /**
+     * Handle general conversational queries using the AI bridge.
+     *
+     * This provides context-aware responses for questions that don't fit
+     * the statistical or search patterns, using our Python AI system.
+     */
     private function handleGeneralQuery(string $message): string
     {
-        // Get some recent complaints for context
+        // Provide recent complaint context to make AI responses more relevant
         $recentComplaints = Complaint::with('analysis')
             ->latest()
             ->limit(5)
@@ -298,19 +374,25 @@ class ChatAgent extends Component
             }
             
         } catch (\Exception $e) {
-            // Fall back to simple response
+            // Python AI bridge unavailable - provide helpful fallback
         }
         
         return "I'm here to help you with LaraCity complaints data. You can ask me to search for specific complaints, show statistics by borough, find high-risk complaints, or analyze patterns in the data. How can I assist you?";
     }
     
+    /**
+     * Generate a ranked list of the most frequently reported complaint types.
+     *
+     * This uses SQL aggregation to efficiently count complaints by type,
+     * avoiding the need to load individual records into memory.
+     */
     private function getMostCommonComplaintTypes(): string
     {
         $complaintTypes = Complaint::select('complaint_type')
             ->selectRaw('COUNT(*) as count')
             ->groupBy('complaint_type')
             ->orderByDesc('count')
-            ->limit(10)
+            ->limit(10)  // Top 10 keeps the response readable
             ->get();
             
         if ($complaintTypes->isEmpty()) {
@@ -329,12 +411,18 @@ class ChatAgent extends Component
         return $response;
     }
     
+    /**
+     * Break down complaint volume by NYC borough.
+     *
+     * Useful for understanding geographic distribution patterns
+     * and identifying which areas generate the most reports.
+     */
     private function getComplaintsByBorough(): string
     {
         $boroughStats = Complaint::select('borough')
             ->selectRaw('COUNT(*) as count')
             ->groupBy('borough')
-            ->orderByDesc('count')
+            ->orderByDesc('count')  // Show highest volume boroughs first
             ->get();
             
         if ($boroughStats->isEmpty()) {
@@ -352,6 +440,12 @@ class ChatAgent extends Component
         return $response;
     }
     
+    /**
+     * Analyze risk score distribution from AI-generated assessments.
+     *
+     * This provides insight into how our AI rates complaints by severity,
+     * helping identify patterns in public safety concerns.
+     */
     private function getRiskLevelDistribution(): string
     {
         $riskStats = DB::table('complaint_analysis')
@@ -378,6 +472,12 @@ class ChatAgent extends Component
         return $response;
     }
     
+    /**
+     * Provide a high-level overview of the complaint dataset.
+     *
+     * This serves as a dashboard summary when users ask for general
+     * statistics without specifying a particular dimension.
+     */
     private function getGeneralStatistics(): string
     {
         $totalComplaints = Complaint::count();
@@ -405,6 +505,12 @@ class ChatAgent extends Component
         return $response;
     }
     
+    /**
+     * Format search results into a readable chat response.
+     *
+     * This handles both enhanced array data from our search service and
+     * raw Eloquent models, presenting them in a consistent format.
+     */
     private function formatComplaintResults(array $results): string
     {
         if (empty($results['results'])) {
@@ -425,7 +531,7 @@ class ChatAgent extends Component
                 $description = $complaint['description'];
                 $analysis = $complaint['analysis'] ?? null;
             } else {
-                // Raw Eloquent model
+                // Raw Eloquent model from fallback searches
                 $complaintNumber = $complaint->complaint_number;
                 $type = $complaint->complaint_type;
                 $borough = $complaint->borough;
@@ -439,6 +545,7 @@ class ChatAgent extends Component
             $response .= "   - Location: {$borough}\n";
             $response .= "   - Status: {$status}\n";
             
+            // Include AI risk assessment if available
             if ($analysis) {
                 $riskScore = is_array($analysis) ? $analysis['risk_score'] : $analysis->risk_score;
                 $riskLevel = $riskScore >= 0.7 ? 'High' : 
