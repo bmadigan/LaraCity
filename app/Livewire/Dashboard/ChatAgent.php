@@ -7,6 +7,7 @@ namespace App\Livewire\Dashboard;
 use App\Models\Complaint;
 use App\Services\HybridSearchService;
 use App\Services\PythonAiBridge;
+use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -152,8 +153,10 @@ class ChatAgent extends Component
         try {
             $response = '';
             
-            // Check if it's a complaint-related query
-            if ($this->isComplaintQuery($message)) {
+            // Route to appropriate handler
+            if ($this->isStatisticalQuery($message)) {
+                $response = $this->handleStatisticalQuery($message);
+            } elseif ($this->isComplaintQuery($message)) {
                 $response = $this->handleComplaintQuery($message);
             } else {
                 $response = $this->handleGeneralQuery($message);
@@ -180,16 +183,62 @@ class ChatAgent extends Component
     
     private function isComplaintQuery(string $message): bool
     {
-        $keywords = ['complaint', 'search', 'find', 'show', 'list', 'how many', 'borough', 'status', 'risk', 'manhattan', 'brooklyn', 'queens', 'bronx', 'staten island'];
+        $searchKeywords = ['search', 'find', 'show me complaints', 'list complaints', 'graffiti', 'noise', 'water'];
         $lowerMessage = strtolower($message);
         
-        foreach ($keywords as $keyword) {
+        foreach ($searchKeywords as $keyword) {
             if (str_contains($lowerMessage, $keyword)) {
                 return true;
             }
         }
         
         return false;
+    }
+    
+    private function isStatisticalQuery(string $message): bool
+    {
+        $statsKeywords = ['most common', 'how many', 'statistics', 'count', 'total', 'percentage', 'breakdown', 'distribution', 'trends'];
+        $lowerMessage = strtolower($message);
+        
+        foreach ($statsKeywords as $keyword) {
+            if (str_contains($lowerMessage, $keyword)) {
+                return true;
+            }
+        }
+        
+        return false;
+    }
+    
+    private function handleStatisticalQuery(string $message): string
+    {
+        try {
+            $lowerMessage = strtolower($message);
+            
+            // Most common complaint types
+            if (str_contains($lowerMessage, 'most common') && str_contains($lowerMessage, 'complaint type')) {
+                return $this->getMostCommonComplaintTypes();
+            }
+            
+            // Complaint counts by borough
+            if (str_contains($lowerMessage, 'borough') && (str_contains($lowerMessage, 'how many') || str_contains($lowerMessage, 'count'))) {
+                return $this->getComplaintsByBorough();
+            }
+            
+            // Risk level distribution
+            if (str_contains($lowerMessage, 'risk') && (str_contains($lowerMessage, 'distribution') || str_contains($lowerMessage, 'breakdown'))) {
+                return $this->getRiskLevelDistribution();
+            }
+            
+            // General statistics
+            return $this->getGeneralStatistics();
+            
+        } catch (\Exception $e) {
+            \Log::error('ChatAgent statistical query failed', [
+                'message' => $message,
+                'error' => $e->getMessage()
+            ]);
+            return "I encountered an error while gathering statistics. Please try asking your question in a different way.";
+        }
     }
     
     private function handleComplaintQuery(string $message): string
@@ -253,6 +302,107 @@ class ChatAgent extends Component
         }
         
         return "I'm here to help you with LaraCity complaints data. You can ask me to search for specific complaints, show statistics by borough, find high-risk complaints, or analyze patterns in the data. How can I assist you?";
+    }
+    
+    private function getMostCommonComplaintTypes(): string
+    {
+        $complaintTypes = Complaint::select('complaint_type')
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('complaint_type')
+            ->orderByDesc('count')
+            ->limit(10)
+            ->get();
+            
+        if ($complaintTypes->isEmpty()) {
+            return "I couldn't find any complaint data to analyze.";
+        }
+        
+        $response = "**Most Common Complaint Types:**\n\n";
+        $total = Complaint::count();
+        
+        foreach ($complaintTypes as $index => $type) {
+            $percentage = $total > 0 ? round(($type->count / $total) * 100, 1) : 0;
+            $response .= ($index + 1) . ". **{$type->complaint_type}** - {$type->count} complaints ({$percentage}%)\n";
+        }
+        
+        $response .= "\n**Total Complaints:** {$total}";
+        return $response;
+    }
+    
+    private function getComplaintsByBorough(): string
+    {
+        $boroughStats = Complaint::select('borough')
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('borough')
+            ->orderByDesc('count')
+            ->get();
+            
+        if ($boroughStats->isEmpty()) {
+            return "I couldn't find any complaint data by borough.";
+        }
+        
+        $response = "**Complaints by Borough:**\n\n";
+        $total = Complaint::count();
+        
+        foreach ($boroughStats as $borough) {
+            $percentage = $total > 0 ? round(($borough->count / $total) * 100, 1) : 0;
+            $response .= "• **{$borough->borough}** - {$borough->count} complaints ({$percentage}%)\n";
+        }
+        
+        return $response;
+    }
+    
+    private function getRiskLevelDistribution(): string
+    {
+        $riskStats = DB::table('complaint_analysis')
+            ->selectRaw('
+                COUNT(*) as total,
+                SUM(CASE WHEN risk_score >= 0.7 THEN 1 ELSE 0 END) as high_risk,
+                SUM(CASE WHEN risk_score >= 0.4 AND risk_score < 0.7 THEN 1 ELSE 0 END) as medium_risk,
+                SUM(CASE WHEN risk_score < 0.4 THEN 1 ELSE 0 END) as low_risk,
+                AVG(risk_score) as avg_risk_score
+            ')
+            ->first();
+            
+        if (!$riskStats || $riskStats->total == 0) {
+            return "I couldn't find any risk analysis data yet. Complaints need to be analyzed first.";
+        }
+        
+        $response = "**Risk Level Distribution:**\n\n";
+        $response .= "• **High Risk (≥0.7):** {$riskStats->high_risk} complaints (" . round(($riskStats->high_risk / $riskStats->total) * 100, 1) . "%)\n";
+        $response .= "• **Medium Risk (0.4-0.69):** {$riskStats->medium_risk} complaints (" . round(($riskStats->medium_risk / $riskStats->total) * 100, 1) . "%)\n";
+        $response .= "• **Low Risk (<0.4):** {$riskStats->low_risk} complaints (" . round(($riskStats->low_risk / $riskStats->total) * 100, 1) . "%)\n\n";
+        $response .= "**Average Risk Score:** " . number_format($riskStats->avg_risk_score, 2) . "\n";
+        $response .= "**Total Analyzed:** {$riskStats->total} complaints";
+        
+        return $response;
+    }
+    
+    private function getGeneralStatistics(): string
+    {
+        $totalComplaints = Complaint::count();
+        $analyzedComplaints = DB::table('complaint_analysis')->count();
+        $recentComplaints = Complaint::where('created_at', '>=', now()->subDays(7))->count();
+        
+        $response = "**LaraCity Complaints Overview:**\n\n";
+        $response .= "• **Total Complaints:** {$totalComplaints}\n";
+        $response .= "• **AI Analyzed:** {$analyzedComplaints}\n";
+        $response .= "• **This Week:** {$recentComplaints}\n\n";
+        
+        if ($totalComplaints > 0) {
+            $response .= "**Most Active Borough:** ";
+            $topBorough = Complaint::select('borough')
+                ->selectRaw('COUNT(*) as count')
+                ->groupBy('borough')
+                ->orderByDesc('count')
+                ->first();
+            $response .= $topBorough ? $topBorough->borough : "Unknown";
+            $response .= "\n\n";
+        }
+        
+        $response .= "Ask me for more specific statistics like 'most common complaint types' or 'complaints by borough'!";
+        
+        return $response;
     }
     
     private function formatComplaintResults(array $results): string
