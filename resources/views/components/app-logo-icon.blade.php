@@ -1,8 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 42" {{ $attributes }}>
-    <path 
-        fill="currentColor" 
-        fill-rule="evenodd" 
-        clip-rule="evenodd"
-        d="M17.2 5.633 8.6.855 0 5.633v26.51l16.2 9 16.2-9v-8.442l7.6-4.223V9.856l-8.6-4.777-8.6 4.777V18.3l-5.6 3.111V5.633ZM38 18.301l-5.6 3.11v-6.157l5.6-3.11V18.3Zm-1.06-7.856-5.54 3.078-5.54-3.079 5.54-3.078 5.54 3.079ZM24.8 18.3v-6.157l5.6 3.111v6.158L24.8 18.3Zm-1 1.732 5.54 3.078-13.14 7.302-5.54-3.078 13.14-7.3v-.002Zm-16.2 7.89 7.6 4.222V38.3L2 30.966V7.92l5.6 3.111v16.892ZM8.6 9.3 3.06 6.222 8.6 3.143l5.54 3.08L8.6 9.3Zm21.8 15.51-13.2 7.334V38.3l13.2-7.334v-6.156ZM9.6 11.034l5.6-3.11v14.6l-5.6 3.11v-14.6Z"
-    />
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" {{ $attributes }}>
+    <!-- City skyline base -->
+    <rect x="2" y="28" width="4" height="10" fill="currentColor" opacity="0.8"/>
+    <rect x="7" y="24" width="4" height="14" fill="currentColor" opacity="0.9"/>
+    <rect x="12" y="20" width="4" height="18" fill="currentColor"/>
+    <rect x="17" y="26" width="4" height="12" fill="currentColor" opacity="0.9"/>
+    <rect x="22" y="22" width="4" height="16" fill="currentColor" opacity="0.8"/>
+    <rect x="27" y="25" width="4" height="13" fill="currentColor" opacity="0.9"/>
+    <rect x="32" y="30" width="4" height="8" fill="currentColor" opacity="0.7"/>
+    
+    <!-- AI Neural network connections -->
+    <circle cx="8" cy="12" r="2.5" fill="currentColor" opacity="0.6"/>
+    <circle cx="20" cy="8" r="2.5" fill="currentColor"/>
+    <circle cx="32" cy="14" r="2.5" fill="currentColor" opacity="0.7"/>
+    <circle cx="14" cy="6" r="1.8" fill="currentColor" opacity="0.8"/>
+    <circle cx="26" cy="10" r="1.8" fill="currentColor" opacity="0.8"/>
+    
+    <!-- Neural connections -->
+    <line x1="8" y1="12" x2="14" y2="6" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+    <line x1="14" y1="6" x2="20" y2="8" stroke="currentColor" stroke-width="1.2" opacity="0.5"/>
+    <line x1="20" y1="8" x2="26" y2="10" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+    <line x1="26" y1="10" x2="32" y2="14" stroke="currentColor" stroke-width="1" opacity="0.4"/>
+    <line x1="8" y1="12" x2="20" y2="8" stroke="currentColor" stroke-width="0.8" opacity="0.3"/>
+    <line x1="20" y1="8" x2="32" y2="14" stroke="currentColor" stroke-width="0.8" opacity="0.3"/>
+    
+    <!-- AI Brain center -->
+    <circle cx="20" cy="8" r="3.5" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.6"/>
+    <circle cx="20" cy="8" r="1.5" fill="currentColor"/>
 </svg>

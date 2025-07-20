@@ -20,12 +20,12 @@
             <flux:spacer />
 
             <flux:navlist variant="outline">
-                <flux:navlist.item icon="folder" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                {{ __('Repository') }}
+                <flux:navlist.item icon="folder" href="https://github.com/brad/LaraCity" target="_blank">
+                {{ __('GitHub Repository') }}
                 </flux:navlist.item>
 
-                <flux:navlist.item icon="book" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
-                {{ __('Documentation') }}
+                <flux:navlist.item icon="book" href="{{ route('dashboard') }}" wire:navigate>
+                {{ __('Tutorial & Docs') }}
                 </flux:navlist.item>
             </flux:navlist>
 
