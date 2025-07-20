@@ -8,6 +8,7 @@ use App\Models\Complaint;
 use App\Services\HybridSearchService;
 use App\Services\PythonAiBridge;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 use Livewire\Attributes\On;
 use Livewire\Component;
@@ -296,7 +297,7 @@ class ChatAgent extends Component
             return $this->getGeneralStatistics();
             
         } catch (\Exception $e) {
-            \Log::error('ChatAgent statistical query failed', [
+            Log::error('ChatAgent statistical query failed', [
                 'message' => $message,
                 'error' => $e->getMessage()
             ]);
@@ -320,7 +321,7 @@ class ChatAgent extends Component
             ]);
             
             // Log search metrics for monitoring and debugging
-            \Log::info('ChatAgent search results', [
+            Log::info('ChatAgent search results', [
                 'query' => $message,
                 'results_count' => count($results['results'] ?? []),
                 'has_results' => !empty($results['results']),
@@ -330,7 +331,7 @@ class ChatAgent extends Component
             return $this->formatComplaintResults($results);
             
         } catch (\Exception $e) {
-            \Log::error('ChatAgent complaint query failed', [
+            Log::error('ChatAgent complaint query failed', [
                 'message' => $message,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
@@ -373,7 +374,7 @@ class ChatAgent extends Component
                 return $result['data']['response'];
             }
             
-        } catch (\Exception $e) {
+        } catch (\Exception) {
             // Python AI bridge unavailable - provide helpful fallback
         }
         
