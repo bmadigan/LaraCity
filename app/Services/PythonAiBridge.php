@@ -39,6 +39,15 @@ class PythonAiBridge
         try {
             $process = new Process($command);
             $process->setTimeout($this->timeout);
+            
+            // Pass environment variables to Python process
+            $process->setEnv([
+                'OPENAI_API_KEY' => config('services.openai.api_key') ?: env('OPENAI_API_KEY'),
+                'OPENAI_ORGANIZATION' => config('services.openai.organization') ?: env('OPENAI_ORGANIZATION'),
+                'PATH' => env('PATH', '/usr/local/bin:/usr/bin:/bin'),
+                'PYTHONPATH' => dirname($this->scriptPath),
+            ]);
+            
             $process->run();
 
             if (!$process->isSuccessful()) {
@@ -120,12 +129,21 @@ class PythonAiBridge
             'python3',
             $this->scriptPath,
             'create_embeddings',
-            json_encode(['text' => $text])
+            json_encode(['texts' => [$text]])
         ];
 
         try {
             $process = new Process($command);
             $process->setTimeout($this->timeout);
+            
+            // Pass environment variables to Python process
+            $process->setEnv([
+                'OPENAI_API_KEY' => config('services.openai.api_key') ?: env('OPENAI_API_KEY'),
+                'OPENAI_ORGANIZATION' => config('services.openai.organization') ?: env('OPENAI_ORGANIZATION'),
+                'PATH' => env('PATH', '/usr/local/bin:/usr/bin:/bin'),
+                'PYTHONPATH' => dirname($this->scriptPath),
+            ]);
+            
             $process->run();
 
             if (!$process->isSuccessful()) {
@@ -133,25 +151,92 @@ class PythonAiBridge
             }
 
             $output = trim($process->getOutput());
-            $result = json_decode($output, true);
+            
+            // Extract JSON from output that may contain log messages
+            $lines = explode("\n", $output);
+            $jsonContent = '';
+            
+            // Look for JSON content by finding the opening { and collecting until closing }
+            $foundStart = false;
+            $braceCount = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                
+                // Look for JSON start
+                if (!$foundStart && str_starts_with($line, '{')) {
+                    $foundStart = true;
+                    $jsonContent = $line;
+                    $braceCount = substr_count($line, '{') - substr_count($line, '}');
+                    
+                    // If it's a complete JSON object on one line
+                    if ($braceCount === 0) {
+                        break;
+                    }
+                } elseif ($foundStart) {
+                    // Continue collecting JSON content
+                    $jsonContent .= "\n" . $line;
+                    $braceCount += substr_count($line, '{') - substr_count($line, '}');
+                    
+                    // If we've balanced all braces, we have complete JSON
+                    if ($braceCount === 0) {
+                        break;
+                    }
+                }
+            }
+            
+            $jsonLine = $jsonContent;
+            
+            $result = json_decode($jsonLine, true);
 
             if (json_last_error() !== JSON_ERROR_NONE) {
-                throw new \RuntimeException('Invalid JSON response from Python embeddings: ' . json_last_error_msg());
+                Log::error('Python embedding response parsing failed', [
+                    'json_error' => json_last_error_msg(),
+                    'raw_output' => $output,
+                    'json_line' => $jsonLine,
+                    'error_output' => $process->getErrorOutput(),
+                ]);
+                throw new \RuntimeException('Invalid JSON response from Python embeddings: ' . json_last_error_msg() . '. JSON line: ' . substr($jsonLine, 0, 200));
             }
 
-            if (!isset($result['data']['embedding']) || !is_array($result['data']['embedding'])) {
+            // Handle the actual format returned by Python script
+            if (!isset($result['data']['embeddings']) || !is_array($result['data']['embeddings'])) {
+                Log::error('Invalid embedding format in Python response', [
+                    'result_structure' => array_keys($result ?? []),
+                    'data_structure' => isset($result['data']) ? array_keys($result['data']) : 'data key missing',
+                    'raw_result' => $result
+                ]);
                 throw new \RuntimeException('Invalid embedding format returned from Python');
             }
 
+            // Extract the first embedding from the embeddings array
+            $firstEmbedding = $result['data']['embeddings'][0] ?? null;
+            if (!$firstEmbedding || !is_array($firstEmbedding)) {
+                throw new \RuntimeException('No valid embedding found in Python response');
+            }
+
+            // Convert from object format {0: value, 1: value, ...} to array [value, value, ...]
+            $embeddingArray = [];
+            for ($i = 0; $i < count($firstEmbedding); $i++) {
+                if (isset($firstEmbedding[(string)$i])) {
+                    $embeddingArray[] = $firstEmbedding[(string)$i];
+                }
+            }
+
+            if (empty($embeddingArray)) {
+                throw new \RuntimeException('Failed to convert embedding format');
+            }
+
             Log::info('Embedding generated successfully', [
-                'embedding_dimension' => count($result['data']['embedding']),
+                'embedding_dimension' => count($embeddingArray),
                 'model' => $result['data']['model'] ?? 'unknown'
             ]);
 
             return [
-                'embedding' => $result['data']['embedding'],
+                'embedding' => $embeddingArray,
                 'model' => $result['data']['model'] ?? 'text-embedding-3-small',
-                'dimension' => count($result['data']['embedding'])
+                'dimension' => count($embeddingArray)
             ];
 
         } catch (\Exception $e) {
