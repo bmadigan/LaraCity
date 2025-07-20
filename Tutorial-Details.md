@@ -2380,11 +2380,14 @@ This phase delivers a **production-ready vector database system** that:
   - Borough: Blue badges for geographic identification
 
 **AI Chat Assistant**:
-- Natural language queries: "Show me high-risk complaints in Manhattan"
-- Semantic search integration using vector similarity
-- Real-time responses with markdown support
-- Mobile-optimized chat modal
-- Keyboard shortcuts (Ctrl+Enter to send)
+- **Dual Query Types**: Intelligent routing between statistical and search queries
+  - **Statistical Queries**: "What are the most common complaint types?" → Database aggregation
+  - **Search Queries**: "Find graffiti complaints" → Vector similarity search
+- **Smart Keyword Detection**: Automatic classification based on query patterns
+- **Rich Statistics**: Complaint type rankings, borough breakdowns, risk distributions
+- **Semantic Search**: Vector similarity for finding specific complaints
+- **Real-time responses** with markdown formatting and mobile optimization
+- **Keyboard shortcuts** (Ctrl+Enter to send)
 
 **Analytics Dashboard**:
 - Key metrics: Total, Open, Escalated, and Closed complaint counts
@@ -2432,6 +2435,58 @@ This phase delivers a **production-ready vector database system** that:
 - **Avoid conflicts**: Complex Alpine.js can interfere with Livewire reactivity
 - **Keep it simple**: Use JavaScript for DOM manipulation, Livewire for state
 - **Event handling**: Use Livewire events rather than Alpine for component communication
+
+#### **AI Chat Agent Query Routing**
+**Critical Pattern**: Distinguish between statistical queries and search queries for proper responses.
+
+```php
+// Statistical queries return aggregated data
+private function isStatisticalQuery(string $message): bool
+{
+    $statsKeywords = ['most common', 'how many', 'statistics', 'count', 'total', 'percentage', 'breakdown', 'distribution', 'trends'];
+    return str_contains(strtolower($message), $keyword);
+}
+
+// Search queries find specific complaints
+private function isComplaintQuery(string $message): bool
+{
+    $searchKeywords = ['search', 'find', 'show me complaints', 'list complaints', 'graffiti', 'noise', 'water'];
+    return str_contains(strtolower($message), $keyword);
+}
+
+// Route to appropriate handler
+if ($this->isStatisticalQuery($message)) {
+    return $this->handleStatisticalQuery($message);  // DB aggregation
+} elseif ($this->isComplaintQuery($message)) {
+    return $this->handleComplaintQuery($message);   // Vector search
+} else {
+    return $this->handleGeneralQuery($message);     // AI chat
+}
+```
+
+**Key Implementation Details**:
+- **Statistical Queries**: Use database aggregation for "most common", "how many", "statistics"
+- **Search Queries**: Use HybridSearchService for finding specific complaints  
+- **General Queries**: Route to AI chat for conversational responses
+- **Smart Routing**: Prevents "no results found" errors on statistical questions
+
+**Example Queries**:
+```
+Statistical: "What are the most common complaint types?"
+→ Returns: Top 10 complaint types with counts and percentages
+
+Statistical: "How many complaints by borough?"  
+→ Returns: Borough breakdown with counts and percentages
+
+Statistical: "Show me risk distribution"
+→ Returns: High/Medium/Low risk breakdown with averages
+
+Search: "Find graffiti complaints in Brooklyn"
+→ Returns: Specific complaints matching criteria via vector search
+
+Search: "Show me noise complaints"
+→ Returns: Specific noise-related complaints with details
+```
 
 #### **Error Handling Patterns**
 ```php
