@@ -6,6 +6,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UserQuestion extends Model
 {
@@ -25,6 +26,12 @@ class UserQuestion extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+    
+    public function embeddings(): HasMany
+    {
+        return $this->hasMany(DocumentEmbedding::class, 'document_id')
+            ->where('document_type', DocumentEmbedding::TYPE_USER_QUESTION);
     }
     
     // Helper methods

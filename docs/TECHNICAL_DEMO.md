@@ -15,7 +15,7 @@
 "LaraCity AI is an intelligent complaint management system that transforms how cities handle citizen complaints. It combines Laravel's robust framework with OpenAI's GPT-4 to provide automated analysis, risk assessment, and semantic search capabilities."
 
 **Key Points:**
-- Built with Laravel 11 and Livewire 3
+- Built with Laravel 12 and Livewire 3
 - Integrates OpenAI GPT-4 for intelligent analysis
 - Uses vector embeddings for semantic search
 - Real-time, reactive UI with Flux components

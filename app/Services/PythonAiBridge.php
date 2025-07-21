@@ -377,6 +377,132 @@ class PythonAiBridge
     }
 
     /**
+     * Handle conversational chat queries using AI.
+     *
+     * This method provides general conversational AI capabilities for queries
+     * that don't fit into specific categories like statistical analysis or search.
+     * It maintains conversation context and provides natural language responses.
+     */
+    public function chat(array $chatData): array
+    {
+        Log::info('Processing chat query via Python AI bridge', [
+            'session_id' => $chatData['session_id'] ?? null,
+            'message_length' => strlen($chatData['message'] ?? ''),
+            'has_context' => !empty($chatData['complaint_data']),
+        ]);
+
+        $command = [
+            'python3',
+            $this->scriptPath,
+            'chat_query',
+            json_encode($chatData)
+        ];
+
+        try {
+            $process = new Process($command);
+            $process->setTimeout($this->timeout);
+            
+            // Forward environment variables securely
+            $process->setEnv([
+                'OPENAI_API_KEY' => config('services.openai.api_key') ?: env('OPENAI_API_KEY'),
+                'OPENAI_ORGANIZATION' => config('services.openai.organization') ?: env('OPENAI_ORGANIZATION'),
+                'PATH' => env('PATH', '/usr/local/bin:/usr/bin:/bin'),
+                'PYTHONPATH' => dirname($this->scriptPath),
+            ]);
+            
+            $process->run();
+
+            if (!$process->isSuccessful()) {
+                throw new ProcessFailedException($process);
+            }
+
+            $output = trim($process->getOutput());
+            
+            // Parse JSON from potentially mixed output
+            $lines = explode("\n", $output);
+            $jsonContent = '';
+            $foundStart = false;
+            $braceCount = 0;
+            
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line)) continue;
+                
+                if (!$foundStart && str_starts_with($line, '{')) {
+                    $foundStart = true;
+                    $jsonContent = $line;
+                    $braceCount = substr_count($line, '{') - substr_count($line, '}');
+                    
+                    if ($braceCount === 0) {
+                        break;
+                    }
+                } elseif ($foundStart) {
+                    $jsonContent .= "\n" . $line;
+                    $braceCount += substr_count($line, '{') - substr_count($line, '}');
+                    
+                    if ($braceCount === 0) {
+                        break;
+                    }
+                }
+            }
+
+            $result = json_decode($jsonContent, true);
+
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('Failed to decode Python chat response', [
+                    'json_error' => json_last_error_msg(),
+                    'raw_output' => $output,
+                    'json_content' => $jsonContent,
+                ]);
+                
+                // Fallback response when JSON parsing fails
+                return [
+                    'response' => "I'm having trouble processing your request right now. Could you please try rephrasing your question?",
+                    'fallback' => true,
+                    'error' => 'JSON parsing failed',
+                ];
+            }
+
+            Log::info('Chat query completed successfully', [
+                'session_id' => $chatData['session_id'] ?? null,
+                'response_length' => strlen($result['response'] ?? ''),
+            ]);
+
+            return [
+                'response' => $result['response'] ?? 'I apologize, but I cannot provide a response at the moment.',
+                'fallback' => false,
+                'metadata' => $result['metadata'] ?? [],
+            ];
+
+        } catch (ProcessFailedException $e) {
+            Log::error('Python chat bridge process failed', [
+                'session_id' => $chatData['session_id'] ?? null,
+                'command' => implode(' ', $command),
+                'error_output' => $e->getProcess()->getErrorOutput(),
+                'exit_code' => $e->getProcess()->getExitCode(),
+            ]);
+
+            return [
+                'response' => "I'm experiencing technical difficulties. Please try your question again in a moment.",
+                'fallback' => true,
+                'error' => 'Process execution failed',
+            ];
+
+        } catch (\Exception $e) {
+            Log::error('Python chat bridge unexpected error', [
+                'session_id' => $chatData['session_id'] ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
+            return [
+                'response' => "I apologize, but I'm unable to process your request at the moment. Please try again.",
+                'fallback' => true,
+                'error' => 'Unexpected error: ' . $e->getMessage(),
+            ];
+        }
+    }
+
+    /**
      * Verify that the Python AI environment is properly configured.
      *
      * This health check is crucial for debugging deployment issues where
