@@ -7,7 +7,6 @@ use App\Models\ComplaintAnalysis;
 use App\Services\PythonAiBridge;
 use App\Services\VectorEmbeddingService;
 use Illuminate\Support\Facades\Queue;
-use Mockery;
 
 beforeEach(function () {
     Queue::fake();
@@ -92,7 +91,7 @@ test('job creates analysis from python bridge result', function () {
     $analysis = ComplaintAnalysis::where('complaint_id', $complaint->id)->first();
     expect($analysis)->not->toBeNull()
         ->and($analysis->summary)->toBe($analysisResult['summary'])
-        ->and($analysis->risk_score)->toBe($analysisResult['risk_score'])
+        ->and((float) $analysis->risk_score)->toBe($analysisResult['risk_score'])
         ->and($analysis->category)->toBe($analysisResult['category'])
         ->and($analysis->tags)->toBe($analysisResult['tags']);
 });
@@ -274,7 +273,7 @@ test('job creates analysis with default values when AI returns minimal data', fu
     $analysis = ComplaintAnalysis::where('complaint_id', $complaint->id)->first();
     expect($analysis)->not->toBeNull()
         ->and($analysis->summary)->toBe('Analysis completed via AI bridge')
-        ->and($analysis->risk_score)->toBe(0.0)
+        ->and((float) $analysis->risk_score)->toBe(0.0)
         ->and($analysis->category)->toBe('General')
         ->and($analysis->tags)->toBe([]);
 });

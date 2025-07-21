@@ -5,7 +5,6 @@ use App\Services\PythonAiBridge;
 use App\Models\DocumentEmbedding;
 use App\Models\Complaint;
 use App\Models\ComplaintAnalysis;
-use Mockery;
 
 beforeEach(function () {
     $this->pythonBridge = Mockery::mock(PythonAiBridge::class);

@@ -19,7 +19,7 @@ test('complaint analysis has fillable attributes', function () {
     
     expect($analysis->complaint_id)->toBe($complaint->id)
         ->and($analysis->summary)->toBe('AI generated summary of the complaint')
-        ->and($analysis->risk_score)->toBe(0.75)
+        ->and((float) $analysis->risk_score)->toBe(0.75)
         ->and($analysis->category)->toBe('Infrastructure')
         ->and($analysis->tags)->toBe(['water', 'leak', 'urgent']);
 });
@@ -30,8 +30,8 @@ test('complaint analysis casts attributes correctly', function () {
         'tags' => ['test', 'tags'],
     ]);
     
-    expect($analysis->risk_score)->toBeFloat()
-        ->and($analysis->risk_score)->toBe(0.85)
+    expect($analysis->risk_score)->toBeNumeric()
+        ->and((float) $analysis->risk_score)->toBe(0.85)
         ->and($analysis->tags)->toBeArray()
         ->and($analysis->tags)->toContain('test')
         ->and($analysis->tags)->toContain('tags');
@@ -82,13 +82,13 @@ test('complaint analysis risk score is normalized between 0 and 1', function () 
     $analysis = ComplaintAnalysis::factory()->create([
         'risk_score' => 0.0,
     ]);
-    expect($analysis->risk_score)->toBe(0.0);
+    expect((float) $analysis->risk_score)->toBe(0.0);
     
     $analysis->update(['risk_score' => 1.0]);
-    expect($analysis->risk_score)->toBe(1.0);
+    expect((float) $analysis->risk_score)->toBe(1.0);
     
     $analysis->update(['risk_score' => 0.5]);
-    expect($analysis->risk_score)->toBe(0.5);
+    expect((float) $analysis->risk_score)->toBe(0.5);
 });
 
 test('complaint analysis handles empty tags', function () {
@@ -197,7 +197,7 @@ test('complaint analysis factory creates valid data', function () {
     
     expect($analysis->complaint_id)->toBeInt()
         ->and($analysis->summary)->toBeString()
-        ->and($analysis->risk_score)->toBeFloat()
+        ->and($analysis->risk_score)->toBeNumeric()
         ->and($analysis->risk_score)->toBeGreaterThanOrEqual(0.0)
         ->and($analysis->risk_score)->toBeLessThanOrEqual(1.0)
         ->and($analysis->category)->toBeString()

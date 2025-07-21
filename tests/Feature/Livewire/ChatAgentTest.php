@@ -6,7 +6,6 @@ use App\Models\ComplaintAnalysis;
 use App\Services\HybridSearchService;
 use App\Services\PythonAiBridge;
 use Livewire\Livewire;
-use Mockery;
 
 beforeEach(function () {
     $this->user = createUser([], true); // Create and login user

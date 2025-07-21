@@ -5,7 +5,6 @@ use App\Models\Complaint;
 use App\Models\ComplaintAnalysis;
 use App\Models\DocumentEmbedding;
 use App\Services\VectorEmbeddingService;
-use Mockery;
 
 beforeEach(function () {
     $this->embeddingService = Mockery::mock(VectorEmbeddingService::class);

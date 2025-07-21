@@ -2,7 +2,6 @@
 
 use App\Services\PythonAiBridge;
 use Symfony\Component\Process\Process;
-use Mockery;
 use Illuminate\Support\Facades\Log;
 
 beforeEach(function () {

@@ -7,7 +7,6 @@ use App\Services\HybridSearchService;
 use App\Services\VectorEmbeddingService;
 use App\Services\PythonAiBridge;
 use Laravel\Sanctum\Sanctum;
-use Mockery;
 
 beforeEach(function () {
     $this->user = User::factory()->create();

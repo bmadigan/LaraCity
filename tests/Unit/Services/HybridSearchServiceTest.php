@@ -6,7 +6,6 @@ use App\Services\PythonAiBridge;
 use App\Models\Complaint;
 use App\Models\ComplaintAnalysis;
 use App\Models\DocumentEmbedding;
-use Mockery;
 
 beforeEach(function () {
     $this->embeddingService = Mockery::mock(VectorEmbeddingService::class);
