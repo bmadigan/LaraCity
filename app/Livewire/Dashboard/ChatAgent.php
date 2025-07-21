@@ -201,10 +201,21 @@ class ChatAgent extends Component
         try {
             $response = '';
             
+            // Debug logging to understand routing decisions
+            $isStatistical = $this->isStatisticalQuery($message);
+            $isComplaint = $this->isComplaintQuery($message);
+            
+            Log::info('ChatAgent query routing', [
+                'message' => $message,
+                'is_statistical' => $isStatistical,
+                'is_complaint' => $isComplaint,
+                'route' => $isStatistical ? 'statistical' : ($isComplaint ? 'complaint' : 'general')
+            ]);
+            
             // Route based on query intent rather than trying one-size-fits-all
-            if ($this->isStatisticalQuery($message)) {
+            if ($isStatistical) {
                 $response = $this->handleStatisticalQuery($message);
-            } elseif ($this->isComplaintQuery($message)) {
+            } elseif ($isComplaint) {
                 $response = $this->handleComplaintQuery($message);
             } else {
                 $response = $this->handleGeneralQuery($message);
@@ -237,7 +248,16 @@ class ChatAgent extends Component
      */
     private function isComplaintQuery(string $message): bool
     {
-        $searchKeywords = ['search', 'find', 'show me complaints', 'list complaints', 'graffiti', 'noise', 'water'];
+        $searchKeywords = [
+            'search', 'find', 'show me complaints', 'list complaints', 
+            'show me', 'find me', 'get me', 'look for',
+            // Specific complaint types
+            'graffiti', 'noise', 'water', 'heat', 'parking', 'sanitation',
+            'high-risk', 'high risk', 'risk complaints',
+            // Location-based searches
+            'in manhattan', 'in brooklyn', 'in queens', 'in bronx', 'in staten island',
+            'manhattan', 'brooklyn', 'queens', 'bronx', 'staten island'
+        ];
         $lowerMessage = strtolower($message);
         
         foreach ($searchKeywords as $keyword) {
@@ -257,7 +277,12 @@ class ChatAgent extends Component
      */
     private function isStatisticalQuery(string $message): bool
     {
-        $statsKeywords = ['most common', 'how many', 'statistics', 'count', 'total', 'percentage', 'breakdown', 'distribution', 'trends'];
+        $statsKeywords = [
+            'most common', 'how many', 'statistics', 'count', 'total', 
+            'percentage', 'breakdown', 'distribution', 'trends', 'summary',
+            'top', 'most frequent', 'average', 'overview', 'analyze',
+            'what are the', 'which are the'
+        ];
         $lowerMessage = strtolower($message);
         
         foreach ($statsKeywords as $keyword) {
@@ -314,11 +339,33 @@ class ChatAgent extends Component
     private function handleComplaintQuery(string $message): string
     {
         try {
-            $searchService = app(HybridSearchService::class);
-            $results = $searchService->search($message, [], [
+            $lowerMessage = strtolower($message);
+            $filters = [];
+            $options = [
                 'limit' => 5,
-                'similarity_threshold' => 0.6  // Reasonable threshold for chat queries
-            ]);
+                'similarity_threshold' => 0.6
+            ];
+            
+            // Extract filters from the message
+            if (str_contains($lowerMessage, 'manhattan')) {
+                $filters['borough'] = 'MANHATTAN';
+            } elseif (str_contains($lowerMessage, 'brooklyn')) {
+                $filters['borough'] = 'BROOKLYN';
+            } elseif (str_contains($lowerMessage, 'queens')) {
+                $filters['borough'] = 'QUEENS';
+            } elseif (str_contains($lowerMessage, 'bronx')) {
+                $filters['borough'] = 'BRONX';
+            } elseif (str_contains($lowerMessage, 'staten island')) {
+                $filters['borough'] = 'STATEN ISLAND';
+            }
+            
+            // Handle high-risk complaint searches
+            if (str_contains($lowerMessage, 'high-risk') || str_contains($lowerMessage, 'high risk')) {
+                $filters['risk_level'] = 'high';
+            }
+            
+            $searchService = app(HybridSearchService::class);
+            $results = $searchService->search($message, $filters, $options);
             
             // Log search metrics for monitoring and debugging
             Log::info('ChatAgent search results', [
@@ -370,13 +417,20 @@ class ChatAgent extends Component
                 'complaint_data' => $recentComplaints
             ]);
             
-            if ($result['success'] && isset($result['data']['response'])) {
-                return $result['data']['response'];
+            if (isset($result['response']) && !$result['fallback']) {
+                return $result['response'];
             }
             
-        } catch (\Exception) {
+        } catch (\Exception $e) {
             // Python AI bridge unavailable - provide helpful fallback
+            Log::warning('ChatAgent Python bridge failed', [
+                'message' => $message,
+                'error' => $e->getMessage()
+            ]);
         }
+        
+        // Instead of generic fallback, try to provide a more helpful response
+        Log::info('ChatAgent using fallback response', ['message' => $message]);
         
         return "I'm here to help you with LaraCity complaints data. You can ask me to search for specific complaints, show statistics by borough, find high-risk complaints, or analyze patterns in the data. How can I assist you?";
     }
