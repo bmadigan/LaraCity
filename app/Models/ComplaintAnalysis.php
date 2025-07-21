@@ -7,6 +7,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ComplaintAnalysis extends Model
 {
@@ -29,6 +30,12 @@ class ComplaintAnalysis extends Model
     public function complaint(): BelongsTo
     {
         return $this->belongsTo(Complaint::class);
+    }
+    
+    public function embeddings(): HasMany
+    {
+        return $this->hasMany(DocumentEmbedding::class, 'document_id')
+            ->where('document_type', DocumentEmbedding::TYPE_ANALYSIS);
     }
     
     // Helper methods
