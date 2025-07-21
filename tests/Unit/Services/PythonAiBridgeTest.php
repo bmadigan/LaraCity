@@ -311,3 +311,243 @@ test('constructor handles missing configuration gracefully', function () {
     expect($timeout->getValue($bridge))->toBe(90)
         ->and($maxOutputLength->getValue($bridge))->toBe(10000);
 });
+
+test('chat returns valid response for successful query', function () {
+    $bridge = Mockery::mock(PythonAiBridge::class)->makePartial();
+    
+    $chatData = [
+        'session_id' => 'test-session-123',
+        'message' => 'What are the most common complaint types?',
+        'complaint_data' => [
+            ['type' => 'Noise', 'count' => 50],
+            ['type' => 'Water', 'count' => 30],
+        ],
+    ];
+    
+    $mockChatResult = [
+        'response' => 'Based on the data, Noise complaints (50) and Water issues (30) are the most common types.',
+        'metadata' => [
+            'model' => 'gpt-4',
+            'tokens_used' => 150,
+            'processing_time' => 1.2,
+        ],
+    ];
+    
+    // Mock the Python execution
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andReturn(null);
+    $processMock->shouldReceive('isSuccessful')->andReturn(true);
+    $processMock->shouldReceive('getOutput')->andReturn(json_encode($mockChatResult));
+    
+    $bridge->shouldReceive('createProcess')->andReturn($processMock);
+    
+    $result = $bridge->chat($chatData);
+    
+    expect($result)->toBeArray()
+        ->and($result['response'])->toBe('Based on the data, Noise complaints (50) and Water issues (30) are the most common types.')
+        ->and($result['fallback'])->toBeFalse()
+        ->and($result['metadata'])->toBeArray()
+        ->and($result['metadata']['model'])->toBe('gpt-4');
+});
+
+test('chat handles process failure with fallback response', function () {
+    $bridge = new PythonAiBridge();
+    
+    $chatData = [
+        'session_id' => 'test-session-456',
+        'message' => 'Tell me about water complaints',
+        'complaint_data' => [],
+    ];
+    
+    // Mock process that fails
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andThrow(new \Symfony\Component\Process\Exception\ProcessFailedException($processMock));
+    $processMock->shouldReceive('getErrorOutput')->andReturn('Python script error');
+    $processMock->shouldReceive('getExitCode')->andReturn(1);
+    
+    $bridgeMock = Mockery::mock(PythonAiBridge::class)->makePartial();
+    $bridgeMock->shouldReceive('createProcess')->andReturn($processMock);
+    
+    Log::shouldReceive('info', 'error')->andReturn(null);
+    
+    $result = $bridgeMock->chat($chatData);
+    
+    expect($result)->toBeArray()
+        ->and($result['response'])->toContain('technical difficulties')
+        ->and($result['fallback'])->toBeTrue()
+        ->and($result['error'])->toBe('Process execution failed');
+});
+
+test('chat handles unexpected exception with fallback response', function () {
+    $bridge = new PythonAiBridge();
+    
+    $chatData = [
+        'session_id' => 'test-session-789',
+        'message' => 'How are complaints distributed by borough?',
+    ];
+    
+    // Mock process that throws unexpected exception
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andThrow(new \Exception('Unexpected system error'));
+    
+    $bridgeMock = Mockery::mock(PythonAiBridge::class)->makePartial();
+    $bridgeMock->shouldReceive('createProcess')->andReturn($processMock);
+    
+    Log::shouldReceive('info', 'error')->andReturn(null);
+    
+    $result = $bridgeMock->chat($chatData);
+    
+    expect($result)->toBeArray()
+        ->and($result['response'])->toContain('unable to process your request')
+        ->and($result['fallback'])->toBeTrue()
+        ->and($result['error'])->toContain('Unexpected error');
+});
+
+test('chat handles invalid json response gracefully', function () {
+    $bridge = new PythonAiBridge();
+    
+    $chatData = [
+        'session_id' => 'test-session-json',
+        'message' => 'Simple question',
+    ];
+    
+    // Mock process that returns invalid JSON
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andReturn(null);
+    $processMock->shouldReceive('isSuccessful')->andReturn(true);
+    $processMock->shouldReceive('getOutput')->andReturn('Invalid JSON response from Python');
+    
+    $bridgeMock = Mockery::mock(PythonAiBridge::class)->makePartial();
+    $bridgeMock->shouldReceive('createProcess')->andReturn($processMock);
+    
+    Log::shouldReceive('info', 'error')->andReturn(null);
+    
+    $result = $bridgeMock->chat($chatData);
+    
+    expect($result)->toBeArray()
+        ->and($result['response'])->toContain('unable to process your request')
+        ->and($result['fallback'])->toBeTrue()
+        ->and($result['error'])->toContain('Unexpected error');
+});
+
+test('chat parses mixed output with logs and json correctly', function () {
+    $bridge = new PythonAiBridge();
+    
+    $chatData = [
+        'session_id' => 'test-mixed-output',
+        'message' => 'Test query with mixed output',
+    ];
+    
+    $mockResponse = [
+        'response' => 'This is the AI response after processing.',
+        'metadata' => ['processing_time' => 0.8],
+    ];
+    
+    // Mixed output with logs and JSON (similar to embedding generation)
+    $mixedOutput = "INFO: Starting chat processing\nDEBUG: Loading context\n" . json_encode($mockResponse) . "\nINFO: Chat complete";
+    
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andReturn(null);
+    $processMock->shouldReceive('isSuccessful')->andReturn(true);
+    $processMock->shouldReceive('getOutput')->andReturn($mixedOutput);
+    
+    $bridgeMock = Mockery::mock(PythonAiBridge::class)->makePartial();
+    $bridgeMock->shouldReceive('createProcess')->andReturn($processMock);
+    
+    Log::shouldReceive('info', 'error')->andReturn(null);
+    
+    $result = $bridgeMock->chat($chatData);
+    
+    expect($result)->toBeArray()
+        ->and($result['response'])->toBe('This is the AI response after processing.')
+        ->and($result['fallback'])->toBeFalse()
+        ->and($result['metadata']['processing_time'])->toBe(0.8);
+});
+
+test('chat accepts and processes various input formats', function () {
+    $bridge = Mockery::mock(PythonAiBridge::class)->makePartial();
+    
+    // Test with minimal data
+    $minimalChatData = [
+        'message' => 'Simple question',
+    ];
+    
+    // Test with full data
+    $fullChatData = [
+        'session_id' => 'full-session',
+        'message' => 'Complex question with context',
+        'complaint_data' => [
+            ['id' => 1, 'type' => 'Noise'],
+            ['id' => 2, 'type' => 'Water'],
+        ],
+        'user_context' => ['borough' => 'MANHATTAN'],
+    ];
+    
+    $mockResponse = ['response' => 'Test response', 'metadata' => []];
+    
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andReturn(null);
+    $processMock->shouldReceive('isSuccessful')->andReturn(true);
+    $processMock->shouldReceive('getOutput')->andReturn(json_encode($mockResponse));
+    
+    $bridge->shouldReceive('createProcess')->andReturn($processMock);
+    
+    // Test both input formats
+    $minimalResult = $bridge->chat($minimalChatData);
+    $fullResult = $bridge->chat($fullChatData);
+    
+    expect($minimalResult['response'])->toBe('Test response')
+        ->and($minimalResult['fallback'])->toBeFalse()
+        ->and($fullResult['response'])->toBe('Test response')
+        ->and($fullResult['fallback'])->toBeFalse();
+});
+
+test('chat logs appropriate information for debugging', function () {
+    $bridge = new PythonAiBridge();
+    
+    $chatData = [
+        'session_id' => 'logging-test',
+        'message' => 'Test message for logging',
+        'complaint_data' => ['test' => 'data'],
+    ];
+    
+    $processMock = Mockery::mock(\Symfony\Component\Process\Process::class);
+    $processMock->shouldReceive('setTimeout')->andReturnSelf();
+    $processMock->shouldReceive('setEnv')->andReturnSelf();
+    $processMock->shouldReceive('run')->andReturn(null);
+    $processMock->shouldReceive('isSuccessful')->andReturn(true);
+    $processMock->shouldReceive('getOutput')->andReturn('{"response": "test"}');
+    
+    $bridgeMock = Mockery::mock(PythonAiBridge::class)->makePartial();
+    $bridgeMock->shouldReceive('createProcess')->andReturn($processMock);
+    
+    // Verify logging calls
+    Log::shouldReceive('info')
+        ->with('Processing chat query via Python AI bridge', Mockery::on(function ($context) {
+            return isset($context['session_id'])
+                && isset($context['message_length'])
+                && isset($context['has_context']);
+        }))
+        ->once();
+    
+    Log::shouldReceive('info')
+        ->with('Chat query completed successfully', Mockery::type('array'))
+        ->once();
+    
+    $bridgeMock->chat($chatData);
+    
+    // Verified by Mockery expectations
+    expect(true)->toBeTrue();
+});

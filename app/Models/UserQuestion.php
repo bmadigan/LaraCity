@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class UserQuestion extends Model
 {
+    use HasFactory;
+
     public function __construct(array $attributes = [])
     {
         parent::__construct($attributes);
@@ -57,6 +60,6 @@ class UserQuestion extends Model
     
     public function scopeWithResponse($query)
     {
-        return $query->whereNotNull('ai_response');
+        return $query->whereNotNull('ai_response')->where('ai_response', '!=', '');
     }
 }

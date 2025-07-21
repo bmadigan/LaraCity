@@ -51,9 +51,21 @@ test('complaint casts attributes correctly', function () {
 });
 
 test('complaint has one analysis relationship', function () {
+    // Clear ALL data to ensure clean state
+    ComplaintAnalysis::query()->delete();
+    Complaint::query()->delete();
+    
     $complaint = Complaint::factory()->create();
-    $analysis = ComplaintAnalysis::factory()->create([
+    
+    // Delete any auto-created analysis to avoid interference
+    ComplaintAnalysis::where('complaint_id', $complaint->id)->delete();
+    
+    $analysis = ComplaintAnalysis::create([
         'complaint_id' => $complaint->id,
+        'summary' => 'Test analysis summary',
+        'risk_score' => 0.5,
+        'category' => 'Test Category',
+        'tags' => ['test', 'analysis'],
     ]);
     
     expect($complaint->analysis)->toBeInstanceOf(ComplaintAnalysis::class)
