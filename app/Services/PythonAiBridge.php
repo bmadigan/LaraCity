@@ -6,12 +6,29 @@ use Illuminate\Support\Facades\Log;
 use Symfony\Component\Process\Exception\ProcessFailedException;
 use Symfony\Component\Process\Process;
 
+/**
+ * Bridge service connecting Laravel to Python AI processing capabilities.
+ *
+ * This class solves the fundamental challenge of integrating PHP with Python's
+ * rich AI ecosystem. Rather than reimplementing complex libraries like OpenAI
+ * and LangChain in PHP, we delegate AI operations to a Python subprocess.
+ * 
+ * The design emphasizes reliability over performance - we prioritize graceful
+ * degradation and robust error handling since AI operations are inherently
+ * unpredictable and external dependencies can fail.
+ */
 class PythonAiBridge
 {
     private string $scriptPath;
     private int $timeout;
     private int $maxOutputLength;
 
+    /**
+     * Initialize the bridge with configuration-driven settings.
+     *
+     * We separate configuration from code to make deployment flexible
+     * across different environments where Python paths and timeouts vary.
+     */
     public function __construct()
     {
         $this->scriptPath = config('complaints.python.script_path');
@@ -20,7 +37,12 @@ class PythonAiBridge
     }
 
     /**
-     * Analyze a complaint using Python AI bridge
+     * Delegate complaint analysis to Python's AI capabilities.
+     *
+     * This method showcases the core pattern: serialize data to JSON,
+     * spawn a Python subprocess, and parse the response. The environment
+     * variable forwarding ensures the Python script has access to API keys
+     * while keeping secrets out of command-line arguments.
      */
     public function analyzeComplaint(array $complaintData): array
     {
@@ -40,7 +62,8 @@ class PythonAiBridge
             $process = new Process($command);
             $process->setTimeout($this->timeout);
             
-            // Pass environment variables to Python process
+            // Forward API credentials securely through environment variables
+            // rather than exposing them in command arguments
             $process->setEnv([
                 'OPENAI_API_KEY' => config('services.openai.api_key') ?: env('OPENAI_API_KEY'),
                 'OPENAI_ORGANIZATION' => config('services.openai.organization') ?: env('OPENAI_ORGANIZATION'),
@@ -70,7 +93,7 @@ class PythonAiBridge
                 'complaint_id' => $complaintData['id'] ?? null,
             ]);
 
-            // Try to decode JSON response
+            // Parse the AI response, handling malformed JSON gracefully
             $result = json_decode($output, true);
             
             if (json_last_error() !== JSON_ERROR_NONE) {
@@ -79,11 +102,11 @@ class PythonAiBridge
                     'raw_output' => $output,
                 ]);
                 
-                // Return fallback analysis
+                // Graceful degradation: provide rule-based analysis instead of failing
                 return $this->createFallbackAnalysis($complaintData, $output);
             }
 
-            // Validate required fields
+            // Sanitize and validate the AI output for database storage
             $validated = $this->validateAnalysisResult($result, $complaintData);
             
             Log::info('Python AI analysis completed successfully', [
@@ -102,7 +125,7 @@ class PythonAiBridge
                 'exit_code' => $e->getProcess()->getExitCode(),
             ]);
 
-            // Return fallback analysis for graceful degradation
+            // Never let AI failures break the application - always provide fallback
             return $this->createFallbackAnalysis($complaintData, 'Process failed: ' . $e->getMessage());
 
         } catch (\Exception $e) {
@@ -111,13 +134,18 @@ class PythonAiBridge
                 'error' => $e->getMessage(),
             ]);
 
-            // Return fallback analysis
+            // Robust error handling ensures the system remains functional
             return $this->createFallbackAnalysis($complaintData, 'Unexpected error: ' . $e->getMessage());
         }
     }
 
     /**
-     * Generate embedding for text using Python AI bridge
+     * Generate vector embeddings through OpenAI's text-embedding model.
+     *
+     * This is the foundation of our semantic search capability. Rather than
+     * implementing OpenAI's API client in PHP, we leverage Python's mature
+     * ecosystem. The complex JSON parsing handles Python's serialization quirks
+     * when converting numpy arrays to JSON.
      */
     public function generateEmbedding(string $text): array
     {
@@ -136,7 +164,7 @@ class PythonAiBridge
             $process = new Process($command);
             $process->setTimeout($this->timeout);
             
-            // Pass environment variables to Python process
+            // Environment variables keep API credentials secure
             $process->setEnv([
                 'OPENAI_API_KEY' => config('services.openai.api_key') ?: env('OPENAI_API_KEY'),
                 'OPENAI_ORGANIZATION' => config('services.openai.organization') ?: env('OPENAI_ORGANIZATION'),
@@ -152,11 +180,12 @@ class PythonAiBridge
 
             $output = trim($process->getOutput());
             
-            // Extract JSON from output that may contain log messages
+            // Parse JSON from mixed output containing both logs and data
+            // This complexity arises because Python scripts often mix print statements with JSON output
             $lines = explode("\n", $output);
             $jsonContent = '';
             
-            // Look for JSON content by finding the opening { and collecting until closing }
+            // Track brace balance to extract complete JSON from multi-line output
             $foundStart = false;
             $braceCount = 0;
             
@@ -164,22 +193,22 @@ class PythonAiBridge
                 $line = trim($line);
                 if (empty($line)) continue;
                 
-                // Look for JSON start
+                // Identify JSON start by looking for opening brace
                 if (!$foundStart && str_starts_with($line, '{')) {
                     $foundStart = true;
                     $jsonContent = $line;
                     $braceCount = substr_count($line, '{') - substr_count($line, '}');
                     
-                    // If it's a complete JSON object on one line
+                    // Handle single-line JSON objects
                     if ($braceCount === 0) {
                         break;
                     }
                 } elseif ($foundStart) {
-                    // Continue collecting JSON content
+                    // Continue collecting until we have balanced braces
                     $jsonContent .= "\n" . $line;
                     $braceCount += substr_count($line, '{') - substr_count($line, '}');
                     
-                    // If we've balanced all braces, we have complete JSON
+                    // Complete JSON object found
                     if ($braceCount === 0) {
                         break;
                     }
@@ -200,7 +229,8 @@ class PythonAiBridge
                 throw new \RuntimeException('Invalid JSON response from Python embeddings: ' . json_last_error_msg() . '. JSON line: ' . substr($jsonLine, 0, 200));
             }
 
-            // Handle the actual format returned by Python script
+            // Navigate Python's serialization format for numpy arrays
+            // Python often serializes arrays as objects with string indices: {"0": 0.1, "1": 0.2}
             if (!isset($result['data']['embeddings']) || !is_array($result['data']['embeddings'])) {
                 Log::error('Invalid embedding format in Python response', [
                     'result_structure' => array_keys($result ?? []),
@@ -210,13 +240,14 @@ class PythonAiBridge
                 throw new \RuntimeException('Invalid embedding format returned from Python');
             }
 
-            // Extract the first embedding from the embeddings array
+            // Extract the first embedding vector from the response
             $firstEmbedding = $result['data']['embeddings'][0] ?? null;
             if (!$firstEmbedding || !is_array($firstEmbedding)) {
                 throw new \RuntimeException('No valid embedding found in Python response');
             }
 
-            // Convert from object format {0: value, 1: value, ...} to array [value, value, ...]
+            // Transform Python's object-like array format to a proper PHP array
+            // This handles the {"0": value, "1": value} format from numpy serialization
             $embeddingArray = [];
             for ($i = 0; $i < count($firstEmbedding); $i++) {
                 if (isset($firstEmbedding[(string)$i])) {
@@ -248,7 +279,10 @@ class PythonAiBridge
     }
 
     /**
-     * Search documents using vector similarity
+     * Perform semantic search using vector similarity.
+     *
+     * This delegates to Python's more sophisticated vector search libraries
+     * rather than implementing cosine similarity calculations in PHP.
      */
     public function vectorSearch(string $query, array $options = []): array
     {
@@ -298,7 +332,10 @@ class PythonAiBridge
     }
 
     /**
-     * Sync vector store with pgvector database
+     * Synchronize the vector database with current complaint data.
+     *
+     * This operation can be expensive, so we delegate it to Python which has
+     * better tooling for batch processing large datasets efficiently.
      */
     public function syncPgVectorStore(): array
     {
@@ -340,7 +377,10 @@ class PythonAiBridge
     }
 
     /**
-     * Test Python AI bridge connectivity
+     * Verify that the Python AI environment is properly configured.
+     *
+     * This health check is crucial for debugging deployment issues where
+     * Python dependencies or API keys might be misconfigured.
      */
     public function testConnection(): array
     {
@@ -388,7 +428,11 @@ class PythonAiBridge
     }
 
     /**
-     * Create fallback analysis when Python bridge fails
+     * Generate rule-based analysis when AI processing fails.
+     *
+     * This fallback system ensures our application remains functional even when
+     * external AI services are unavailable. It uses simple heuristics based on
+     * complaint type keywords to provide basic risk assessment.
      */
     private function createFallbackAnalysis(array $complaintData, string $errorContext): array
     {
@@ -417,7 +461,11 @@ class PythonAiBridge
     }
 
     /**
-     * Validate and sanitize analysis result from Python
+     * Sanitize AI output for safe database storage.
+     *
+     * AI models can return unexpected data types or out-of-range values.
+     * This validation ensures we store clean, consistent data regardless
+     * of what the AI returns.
      */
     private function validateAnalysisResult(array $result, array $complaintData): array
     {
@@ -431,13 +479,17 @@ class PythonAiBridge
     }
 
     /**
-     * Rule-based risk score estimation for fallback
+     * Estimate risk using keyword-based heuristics.
+     *
+     * While less sophisticated than AI analysis, these rules provide
+     * reasonable risk assessments based on domain expertise about
+     * NYC complaint types and their typical severity levels.
      */
     private function estimateRiskScore(array $complaintData): float
     {
         $type = strtolower($complaintData['type'] ?? '');
 
-        // High-risk complaint types
+        // Emergency situations that pose immediate public safety risks
         if (str_contains($type, 'gas leak') || 
             str_contains($type, 'structural') || 
             str_contains($type, 'emergency') ||
@@ -466,7 +518,10 @@ class PythonAiBridge
     }
 
     /**
-     * Rule-based categorization for fallback
+     * Classify complaints into operational categories.
+     *
+     * These categories align with how NYC agencies typically organize
+     * complaint types for routing and resource allocation.
      */
     private function categorizeComplaint(array $complaintData): string
     {
@@ -483,7 +538,10 @@ class PythonAiBridge
     }
 
     /**
-     * Generate fallback tags based on complaint data
+     * Create searchable tags from structured complaint data.
+     *
+     * These tags enable basic search functionality even when sophisticated
+     * vector search is unavailable, providing a simple indexing system.
      */
     private function generateFallbackTags(array $complaintData): array
     {

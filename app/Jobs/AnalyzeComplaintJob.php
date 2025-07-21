@@ -12,6 +12,17 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
+/**
+ * Background job for AI-powered complaint analysis and vector embedding generation.
+ *
+ * This job demonstrates Laravel's queue system enabling expensive AI operations
+ * to run asynchronously. The design prioritizes reliability through retry logic
+ * and graceful degradation - if embedding generation fails, we don't fail the
+ * entire analysis since the core AI insights are still valuable.
+ *
+ * The risk-based escalation logic shows how AI insights can trigger automated
+ * workflows, moving high-risk complaints through different processing pipelines.
+ */
 class AnalyzeComplaintJob implements ShouldQueue
 {
     use Queueable, InteractsWithQueue, SerializesModels;
@@ -20,7 +31,11 @@ class AnalyzeComplaintJob implements ShouldQueue
     public int $timeout;
 
     /**
-     * Create a new job instance.
+     * Configure the job for reliable AI processing.
+     *
+     * The timeout and retry settings reflect the unpredictable nature of AI
+     * operations - network issues or service overload can cause failures that
+     * resolve on retry. The dedicated queue allows scaling AI workers separately.
      */
     public function __construct(
         public Complaint $complaint
@@ -31,7 +46,11 @@ class AnalyzeComplaintJob implements ShouldQueue
     }
 
     /**
-     * Execute the job.
+     * Execute the comprehensive AI analysis workflow.
+     *
+     * This method orchestrates multiple AI operations: analysis, embedding
+     * generation, and risk-based escalation. The idempotency check prevents
+     * duplicate work when jobs are retried or accidentally queued multiple times.
      */
     public function handle(PythonAiBridge $pythonBridge, VectorEmbeddingService $embeddingService): void
     {
@@ -41,7 +60,7 @@ class AnalyzeComplaintJob implements ShouldQueue
         ]);
 
         try {
-            // Skip if already analyzed
+            // Idempotency check: avoid duplicate analysis for performance and cost
             if ($this->complaint->analysis()->exists()) {
                 Log::info('Complaint already analyzed, skipping', [
                     'complaint_id' => $this->complaint->id,
@@ -49,7 +68,7 @@ class AnalyzeComplaintJob implements ShouldQueue
                 return;
             }
 
-            // Prepare data for Python AI analysis
+            // Transform Eloquent model into AI-friendly data structure
             $complaintData = [
                 'id' => $this->complaint->id,
                 'complaint_number' => $this->complaint->complaint_number,
@@ -62,10 +81,10 @@ class AnalyzeComplaintJob implements ShouldQueue
                 'submitted_at' => $this->complaint->submitted_at?->toISOString(),
             ];
 
-            // Call Python AI bridge for analysis
+            // Delegate the heavy AI analysis to our Python bridge
             $analysisResult = $pythonBridge->analyzeComplaint($complaintData);
 
-            // Create analysis record
+            // Persist AI insights for future use and audit trails
             $analysis = ComplaintAnalysis::create([
                 'complaint_id' => $this->complaint->id,
                 'summary' => $analysisResult['summary'] ?? 'Analysis completed via AI bridge',
@@ -80,7 +99,8 @@ class AnalyzeComplaintJob implements ShouldQueue
                 'category' => $analysis->category,
             ]);
 
-            // Generate vector embedding for the complaint
+            // Enable semantic search by generating vector embeddings
+            // This is optional functionality that enhances search but doesn't break analysis
             try {
                 $embedding = $embeddingService->generateEmbedding($this->complaint);
                 
@@ -100,10 +120,11 @@ class AnalyzeComplaintJob implements ShouldQueue
                     'complaint_id' => $this->complaint->id,
                     'error' => $e->getMessage(),
                 ]);
-                // Don't fail the job for embedding issues
+                // Graceful degradation: embedding failure shouldn't break analysis
             }
 
-            // Also generate embedding for the analysis summary if available
+            // Create searchable embeddings for AI-generated summaries
+            // This allows users to search by the AI's interpretation, not just raw data
             if (!empty($analysis->summary)) {
                 try {
                     $analysisEmbedding = $embeddingService->generateEmbedding($analysis);
@@ -124,7 +145,8 @@ class AnalyzeComplaintJob implements ShouldQueue
                 }
             }
 
-            // Check if escalation is needed
+            // Trigger automated escalation workflows for high-risk complaints
+            // This demonstrates how AI insights can drive business process automation
             if ($analysis->risk_score >= config('complaints.escalate_threshold', 0.7)) {
                 Log::info('High risk complaint detected, triggering escalation', [
                     'complaint_id' => $this->complaint->id,
@@ -132,7 +154,7 @@ class AnalyzeComplaintJob implements ShouldQueue
                     'threshold' => config('complaints.escalate_threshold', 0.7),
                 ]);
 
-                // Dispatch escalation job
+                // Queue escalation on a separate queue for different SLA requirements
                 FlagComplaintJob::dispatch($this->complaint, $analysis)
                     ->onQueue(config('complaints.queues.escalation', 'escalation'));
             }
@@ -144,12 +166,17 @@ class AnalyzeComplaintJob implements ShouldQueue
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            // Re-throw to trigger Laravel's retry mechanism
             throw $e;
         }
     }
 
     /**
-     * Handle a job failure.
+     * Handle permanent job failure after all retries are exhausted.
+     *
+     * This provides visibility into systemic issues and allows for manual
+     * intervention or alternative processing strategies when AI services
+     * are consistently failing.
      */
     public function failed(\Throwable $exception): void
     {

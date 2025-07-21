@@ -9,19 +9,39 @@ use App\Models\ComplaintAnalysis;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * Vector embedding service enabling semantic search across different document types.
+ *
+ * This service abstracts the complexity of converting various Laravel models into
+ * searchable vector representations. The key insight is that different document
+ * types require different content extraction strategies, but they all share the
+ * same underlying embedding and search mechanics.
+ *
+ * We use content hashing to avoid regenerating embeddings for identical content,
+ * which is crucial for performance when dealing with large datasets.
+ */
 class VectorEmbeddingService
 {
+    /**
+     * Dependency injection allows us to mock the Python bridge in tests
+     * and swap implementations without changing this service.
+     */
     public function __construct(
         private PythonAiBridge $pythonBridge
     ) {}
 
     /**
-     * Generate and store embedding for a document
+     * Transform any Laravel model into a searchable vector embedding.
+     *
+     * This method demonstrates the adapter pattern: we extract content from
+     * different model types using type-specific logic, then apply the same
+     * embedding generation process. The content hashing prevents duplicate
+     * work when multiple documents have identical content.
      */
     public function generateEmbedding(Model $document, ?string $customContent = null): ?DocumentEmbedding
     {
         try {
-            // Extract content and metadata based on document type
+            // Extract searchable content using document-specific formatting
             $documentData = $this->extractDocumentData($document, $customContent);
             
             if (empty($documentData['content'])) {
@@ -32,7 +52,7 @@ class VectorEmbeddingService
                 return null;
             }
 
-            // Check if embedding already exists
+            // Avoid expensive AI calls by reusing embeddings for identical content
             $contentHash = DocumentEmbedding::createContentHash($documentData['content']);
             $existingEmbedding = DocumentEmbedding::findByContentHash($contentHash);
             
@@ -45,7 +65,7 @@ class VectorEmbeddingService
                 return $existingEmbedding;
             }
 
-            // Generate embedding using Python bridge
+            // Delegate to Python for the heavy AI lifting
             $embeddingData = $this->pythonBridge->generateEmbedding($documentData['content']);
             
             if (!$embeddingData || empty($embeddingData['embedding'])) {
@@ -56,7 +76,7 @@ class VectorEmbeddingService
                 return null;
             }
 
-            // Store embedding in database
+            // Persist the vector representation for future searches
             $embedding = DocumentEmbedding::create([
                 'document_type' => $documentData['type'],
                 'document_id' => $document->id,
@@ -89,12 +109,16 @@ class VectorEmbeddingService
     }
 
     /**
-     * Search for similar documents using vector similarity
+     * Find documents with similar semantic meaning to a query.
+     *
+     * This is where the magic happens: we convert the user's natural language
+     * query into the same vector space as our documents, then use mathematical
+     * similarity (typically cosine distance) to find semantically related content.
      */
     public function searchSimilar(string $query, string $documentType = null, float $threshold = 0.8, int $limit = 10): array
     {
         try {
-            // Generate embedding for the query
+            // Transform the search query into the same vector space as our documents
             $queryEmbedding = $this->pythonBridge->generateEmbedding($query);
             
             if (!$queryEmbedding || empty($queryEmbedding['embedding'])) {
@@ -102,7 +126,7 @@ class VectorEmbeddingService
                 return [];
             }
 
-            // Search for similar documents
+            // Execute the vector similarity search using database-stored embeddings
             $embeddingModel = $queryEmbedding['model'] ?? 'text-embedding-3-small';
             $results = DocumentEmbedding::searchSimilar(
                 $query,
@@ -113,7 +137,7 @@ class VectorEmbeddingService
                 $limit
             );
 
-            // Load related documents and format results
+            // Enrich results with full model data for UI consumption
             $formattedResults = [];
             foreach ($results as $embedding) {
                 $relatedDocument = $this->loadRelatedDocument($embedding);
@@ -148,7 +172,11 @@ class VectorEmbeddingService
     }
 
     /**
-     * Generate embeddings for multiple documents in batch
+     * Process large document collections efficiently with rate limiting.
+     *
+     * Batch processing is essential for initial data imports and periodic
+     * updates. The rate limiting prevents overwhelming external AI services
+     * and ensures we stay within API quotas.
      */
     public function generateBatchEmbeddings(array $documents, int $batchSize = 10): array
     {
@@ -179,7 +207,7 @@ class VectorEmbeddingService
                 }
             }
             
-            // Small delay between batches to avoid rate limiting
+            // Respectful rate limiting to avoid overwhelming AI service quotas
             usleep(100000); // 100ms
         }
 
@@ -187,7 +215,11 @@ class VectorEmbeddingService
     }
 
     /**
-     * Extract content and metadata from different document types
+     * Transform different Laravel models into a unified searchable format.
+     *
+     * This method implements the strategy pattern: each document type has its
+     * own content extraction logic, but they all conform to the same interface.
+     * The metadata captures structured information for filtering and faceting.
      */
     private function extractDocumentData(Model $document, ?string $customContent = null): array
     {
@@ -202,6 +234,7 @@ class VectorEmbeddingService
             ];
         }
 
+        // Map each document type to its optimal search representation
         return match (get_class($document)) {
             Complaint::class => [
                 'type' => DocumentEmbedding::TYPE_COMPLAINT,
@@ -242,7 +275,11 @@ class VectorEmbeddingService
     }
 
     /**
-     * Format complaint data into searchable text content
+     * Create rich, searchable text from structured complaint data.
+     *
+     * This formatting strategy balances completeness with relevance. We include
+     * both original complaint data and AI-generated insights to create a
+     * comprehensive searchable representation that captures both facts and context.
      */
     private function formatComplaintContent(Complaint $complaint): string
     {
@@ -254,6 +291,7 @@ class VectorEmbeddingService
             "STATUS: {$complaint->status}",
         ];
 
+        // Enhance with AI insights when available for richer semantic search
         if ($complaint->analysis) {
             $parts[] = "AI SUMMARY: {$complaint->analysis->summary}";
             $parts[] = "CATEGORY: {$complaint->analysis->category}";
@@ -266,7 +304,11 @@ class VectorEmbeddingService
     }
 
     /**
-     * Load the related document for an embedding
+     * Hydrate embedding results with full Eloquent models.
+     *
+     * This lazy loading approach fetches complete model data only when needed,
+     * optimizing performance by avoiding expensive joins during the initial
+     * vector similarity calculation.
      */
     private function loadRelatedDocument(DocumentEmbedding $embedding): ?Model
     {
@@ -279,7 +321,11 @@ class VectorEmbeddingService
     }
 
     /**
-     * Update Python bridge to support pgvector
+     * Synchronize embeddings with the pgvector database for advanced search.
+     *
+     * This operation bridges our Laravel-managed embeddings with PostgreSQL's
+     * pgvector extension, enabling more sophisticated vector operations than
+     * our basic similarity search can provide.
      */
     public function syncVectorStore(): array
     {

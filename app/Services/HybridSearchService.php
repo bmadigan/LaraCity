@@ -7,27 +7,50 @@ use App\Models\Complaint;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Hybrid search combining vector similarity with traditional metadata filtering.
+ *
+ * This service represents a key architectural decision: rather than relying solely
+ * on either vector search or SQL queries, we combine both approaches to achieve
+ * better relevance. Vector search excels at semantic understanding while metadata
+ * filters provide precise categorical matching.
+ *
+ * The weighted scoring system allows fine-tuning the balance between semantic
+ * relevance and exact matches based on the use case.
+ */
 class HybridSearchService
 {
+    /**
+     * Inject dependencies to enable testing and flexibility.
+     *
+     * Constructor injection makes it easy to mock these services in tests
+     * and allows for different implementations in different environments.
+     */
     public function __construct(
         private VectorEmbeddingService $embeddingService,
         private PythonAiBridge $pythonBridge
     ) {}
 
     /**
-     * Perform hybrid search combining vector similarity and metadata filtering
+     * Execute a hybrid search strategy combining multiple approaches.
+     *
+     * The key insight is that different search approaches excel at different
+     * tasks: vector search for semantic similarity, metadata search for exact
+     * matches. By combining them with configurable weights, we can optimize
+     * for different use cases.
      */
     public function search(string $query, array $filters = [], array $options = []): array
     {
         $startTime = microtime(true);
         
-        // Default options
+        // Configurable weights allow tuning the search strategy
+        // Higher vector weight favors semantic similarity over exact matches
         $options = array_merge([
-            'vector_weight' => 0.7,
-            'metadata_weight' => 0.3,
-            'similarity_threshold' => 0.7,
+            'vector_weight' => 0.7,      // Semantic understanding
+            'metadata_weight' => 0.3,     // Exact field matches
+            'similarity_threshold' => 0.7, // Quality gate for vector results
             'limit' => 20,
-            'include_fallback' => true,
+            'include_fallback' => true,    // Graceful degradation
         ], $options);
 
         try {
@@ -37,16 +60,14 @@ class HybridSearchService
                 'options' => $options
             ]);
 
-            // Step 1: Vector similarity search
+            // Execute parallel search strategies for maximum coverage
             $vectorResults = $this->vectorSimilaritySearch($query, $options);
-            
-            // Step 2: Metadata-based search
             $metadataResults = $this->metadataSearch($query, $filters, $options);
             
-            // Step 3: Combine and rank results
+            // Merge results using weighted scoring to balance relevance types
             $combinedResults = $this->combineResults($vectorResults, $metadataResults, $options);
             
-            // Step 4: Enhance with complaint data
+            // Enrich results with full complaint data for UI display
             $enhancedResults = $this->enhanceWithComplaintData($combinedResults);
             
             $duration = round((microtime(true) - $startTime) * 1000, 2);
@@ -79,7 +100,7 @@ class HybridSearchService
                 'trace' => $e->getTraceAsString()
             ]);
 
-            // Fallback to metadata search only
+            // Graceful degradation: fall back to simpler search when AI fails
             if ($options['include_fallback']) {
                 return $this->fallbackSearch($query, $filters, $options);
             }
@@ -89,12 +110,16 @@ class HybridSearchService
     }
 
     /**
-     * Vector similarity search using embeddings
+     * Perform semantic search using vector embeddings.
+     *
+     * This searches by meaning rather than exact keywords. A query for "water"
+     * might match complaints about "plumbing" or "leaks" based on semantic
+     * similarity rather than literal text matching.
      */
     private function vectorSimilaritySearch(string $query, array $options): array
     {
         try {
-            // Generate embedding for the query
+            // Convert user query into the same vector space as our documents
             $embeddingData = $this->pythonBridge->generateEmbedding($query);
             
             if (!$embeddingData || empty($embeddingData['embedding'])) {
@@ -102,13 +127,14 @@ class HybridSearchService
                 return [];
             }
 
-            // Search similar documents
+            // Find documents with similar semantic meaning using cosine similarity
             $results = DocumentEmbedding::similarTo(
                 $embeddingData['embedding'],
                 $options['similarity_threshold'],
                 $options['limit']
             )->get();
 
+            // Structure results for consistent processing in the combination phase
             return $results->map(function ($embedding) {
                 return [
                     'type' => 'vector',
@@ -131,14 +157,18 @@ class HybridSearchService
     }
 
     /**
-     * Metadata-based search using traditional query methods
+     * Traditional keyword-based search with precise filtering.
+     *
+     * This complements vector search by providing exact matches and supporting
+     * complex filtering that vector search can't handle well. The ILIKE queries
+     * enable case-insensitive partial matching across key fields.
      */
     private function metadataSearch(string $query, array $filters, array $options): array
     {
         try {
             $complaintQuery = Complaint::query();
 
-            // Apply text search on complaint fields
+            // Search across key text fields using case-insensitive pattern matching
             $complaintQuery->where(function ($q) use ($query) {
                 $q->where('complaint_type', 'ILIKE', "%{$query}%")
                   ->orWhere('descriptor', 'ILIKE', "%{$query}%")
@@ -171,7 +201,8 @@ class HybridSearchService
                 $complaintQuery->where('submitted_at', '<=', $filters['date_to']);
             }
 
-            // Risk-based filtering if analysis exists
+            // Apply AI-generated risk level filters when available
+            // This demonstrates how traditional SQL can leverage AI insights
             if (!empty($filters['risk_level'])) {
                 $complaintQuery->whereHas('analysis', function ($q) use ($filters) {
                     switch ($filters['risk_level']) {
@@ -193,8 +224,9 @@ class HybridSearchService
                 ->limit($options['limit'])
                 ->get();
 
+            // Transform SQL results into a format compatible with vector results
             return $complaints->map(function ($complaint) use ($query) {
-                // Calculate simple text relevance score
+                // Calculate relevance based on field-specific text matching
                 $relevance = $this->calculateTextRelevance($complaint, $query);
 
                 return [
@@ -218,14 +250,18 @@ class HybridSearchService
     }
 
     /**
-     * Combine vector and metadata results with weighted scoring
+     * Merge and score results from multiple search strategies.
+     *
+     * The weighting system allows tuning between semantic understanding
+     * (vector) and exact matching (metadata). Documents found by both
+     * methods get boosted scores, reflecting higher confidence.
      */
     private function combineResults(array $vectorResults, array $metadataResults, array $options): array
     {
         $combined = [];
         $seenDocuments = [];
 
-        // Add vector results with weighted scoring
+        // Process vector results first, applying semantic relevance weights
         foreach ($vectorResults as $result) {
             $key = $result['document_type'] . '_' . $result['document_id'];
             
@@ -236,12 +272,12 @@ class HybridSearchService
             }
         }
 
-        // Add metadata results, combining scores if document already exists
+        // Merge metadata results, boosting scores for documents found by both methods
         foreach ($metadataResults as $result) {
             $key = $result['document_type'] . '_' . $result['document_id'];
             
             if (isset($seenDocuments[$key])) {
-                // Find existing result and boost score
+                // Boost score for documents that match both semantically and literally
                 foreach ($combined as &$existingResult) {
                     if ($existingResult['document_type'] === $result['document_type'] && 
                         $existingResult['document_id'] === $result['document_id']) {
@@ -251,6 +287,7 @@ class HybridSearchService
                     }
                 }
             } else {
+                // Add metadata-only results with appropriate weighting
                 $result['combined_score'] = $result['relevance'] * $options['metadata_weight'];
                 $result['sources'] = ['metadata_search'];
                 $combined[] = $result;
@@ -267,7 +304,11 @@ class HybridSearchService
     }
 
     /**
-     * Enhance results with full complaint data
+     * Enrich search results with complete complaint data for UI display.
+     *
+     * This lazy-loading approach fetches full records only for the final
+     * result set, avoiding expensive joins during the search phase while
+     * ensuring the UI has all necessary data.
      */
     private function enhanceWithComplaintData(array $results): array
     {
@@ -276,6 +317,7 @@ class HybridSearchService
                 $complaint = Complaint::with(['analysis'])->find($result['document_id']);
                 
                 if ($complaint) {
+                    // Structure the data for consistent API responses
                     $result['complaint'] = [
                         'id' => $complaint->id,
                         'complaint_number' => $complaint->complaint_number,
@@ -301,38 +343,45 @@ class HybridSearchService
     }
 
     /**
-     * Calculate text relevance score for metadata search
+     * Calculate relevance scores based on field-specific importance.
+     *
+     * This scoring system reflects the relative importance of different
+     * fields: complaint type is most important for categorization, while
+     * agency name provides context but is less critical for relevance.
      */
     private function calculateTextRelevance(Complaint $complaint, string $query): float
     {
         $query = strtolower($query);
         $score = 0.0;
 
-        // Check complaint type (highest weight)
+        // Complaint type carries highest weight for classification accuracy
         if (str_contains(strtolower($complaint->complaint_type), $query)) {
             $score += 0.4;
         }
 
-        // Check description
+        // Description provides detailed context about the issue
         if (str_contains(strtolower($complaint->descriptor ?? ''), $query)) {
             $score += 0.3;
         }
 
-        // Check address
+        // Address enables location-based search
         if (str_contains(strtolower($complaint->incident_address ?? ''), $query)) {
             $score += 0.2;
         }
 
-        // Check agency
+        // Agency provides administrative context
         if (str_contains(strtolower($complaint->agency_name ?? ''), $query)) {
             $score += 0.1;
         }
 
-        return min(1.0, $score);
+        return min(1.0, $score); // Cap at maximum relevance
     }
 
     /**
-     * Format complaint data for search display
+     * Create a unified text representation for search results.
+     *
+     * This formatting provides a consistent way to display search results
+     * regardless of which search method found them, making the UI predictable.
      */
     private function formatComplaintForSearch(Complaint $complaint): string
     {
@@ -352,7 +401,11 @@ class HybridSearchService
     }
 
     /**
-     * Fallback search using only metadata when vector search fails
+     * Provide degraded but functional search when AI services fail.
+     *
+     * This fallback ensures our application remains usable even when
+     * external dependencies are unavailable, maintaining core functionality
+     * through traditional database queries.
      */
     private function fallbackSearch(string $query, array $filters, array $options): array
     {
@@ -368,7 +421,7 @@ class HybridSearchService
             'metadata' => [
                 'query' => $query,
                 'total_results' => count($enhancedResults),
-                'search_mode' => 'fallback_metadata_only',
+                'search_mode' => 'fallback_metadata_only', // Signal degraded mode to UI
                 'filters_applied' => $filters
             ]
         ];
