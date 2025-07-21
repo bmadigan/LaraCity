@@ -21,7 +21,8 @@
       "WebFetch(domain:fluxui.dev)",
       "Bash(php:*)",
       "Bash(OPENAI_API_KEY=\"$OPENAI_API_KEY\" python3 lacity-ai/langchain_runner.py create_embeddings '{\"\"texts\"\": [\"\"COMPLAINT TYPE: Graffiti\\nDESCRIPTION: Graffiti on building\\nLOCATION: Brooklyn, 123 Main Street\"\"]}')",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(git checkout:*)"
     ],
     "deny": []
   }

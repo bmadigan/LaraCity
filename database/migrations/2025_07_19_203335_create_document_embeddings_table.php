@@ -36,11 +36,18 @@ return new class extends Migration
             $table->timestamps();
         });
         
-        // Add vector column using raw SQL since Laravel doesn't support vector type natively
-        DB::statement('ALTER TABLE document_embeddings ADD COLUMN embedding vector(1536)');
-        
-        // Create HNSW index for fast similarity search
-        DB::statement('CREATE INDEX ON document_embeddings USING hnsw (embedding vector_cosine_ops)');
+        // Only add PostgreSQL-specific features when using PostgreSQL
+        if (DB::connection()->getDriverName() === 'pgsql') {
+            // Add vector column using raw SQL since Laravel doesn't support vector type natively
+            DB::statement('ALTER TABLE document_embeddings ADD COLUMN embedding vector(1536)');
+            
+            // Create HNSW index for fast similarity search
+            DB::statement('CREATE INDEX ON document_embeddings USING hnsw (embedding vector_cosine_ops)');
+        } else {
+            // For other databases (like SQLite in tests), use TEXT column for embedding storage
+            $table = 'document_embeddings';
+            DB::statement("ALTER TABLE {$table} ADD COLUMN embedding TEXT");
+        }
     }
 
     /**

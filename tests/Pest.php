@@ -12,8 +12,12 @@
 */
 
 pest()->extend(Tests\TestCase::class)
- // ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
     ->in('Feature');
+
+pest()->extend(Tests\TestCase::class)
+    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+    ->in('Unit');
 
 /*
 |--------------------------------------------------------------------------
@@ -41,7 +45,57 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+use App\Models\User;
+use App\Models\Complaint;
+use App\Models\ComplaintAnalysis;
+use App\Services\PythonAiBridge;
+
+/**
+ * Create a test user and optionally log them in.
+ */
+function createUser(array $attributes = [], bool $login = false): User
 {
-    // ..
+    $user = User::factory()->create($attributes);
+    
+    if ($login) {
+        test()->actingAs($user);
+    }
+    
+    return $user;
+}
+
+/**
+ * Create a test complaint with optional analysis.
+ */
+function createComplaint(array $attributes = [], bool $withAnalysis = false): Complaint
+{
+    $complaint = Complaint::factory()->create($attributes);
+    
+    if ($withAnalysis) {
+        ComplaintAnalysis::factory()->create([
+            'complaint_id' => $complaint->id,
+        ]);
+    }
+    
+    return $complaint;
+}
+
+/**
+ * Mock the Python AI Bridge service.
+ */
+function mockPythonBridge(?array $analysisResponse = null, ?array $embeddingResponse = null): void
+{
+    $mock = Mockery::mock(PythonAiBridge::class);
+    
+    if ($analysisResponse !== null) {
+        $mock->shouldReceive('analyzeComplaint')
+            ->andReturn($analysisResponse);
+    }
+    
+    if ($embeddingResponse !== null) {
+        $mock->shouldReceive('generateEmbedding')
+            ->andReturn($embeddingResponse);
+    }
+    
+    test()->instance(PythonAiBridge::class, $mock);
 }
