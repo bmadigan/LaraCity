@@ -343,7 +343,7 @@ class ChatAgent extends Component
             $filters = [];
             $options = [
                 'limit' => 5,
-                'similarity_threshold' => 0.6
+                'similarity_threshold' => 0.3  // Lower threshold for better recall
             ];
             
             // Extract filters from the message
@@ -370,10 +370,17 @@ class ChatAgent extends Component
             // Log search metrics for monitoring and debugging
             Log::info('ChatAgent search results', [
                 'query' => $message,
+                'filters' => $filters,
                 'results_count' => count($results['results'] ?? []),
                 'has_results' => !empty($results['results']),
                 'first_result_type' => !empty($results['results']) ? gettype($results['results'][0]['complaint'] ?? null) : 'none'
             ]);
+            
+            // If hybrid search returns no results, try a simple database search as fallback
+            if (empty($results['results'])) {
+                Log::info('ChatAgent hybrid search returned no results, trying database fallback');
+                $results = $this->fallbackDatabaseSearch($message, $filters, $options['limit']);
+            }
             
             return $this->formatComplaintResults($results);
             
@@ -614,6 +621,78 @@ class ChatAgent extends Component
         $response .= "\nWould you like more details about any of these complaints or search for something else?";
         
         return $response;
+    }
+    
+    /**
+     * Fallback database search when hybrid search returns no results.
+     *
+     * This uses simple SQL LIKE queries to find complaints when vector search fails.
+     * It's less sophisticated but provides better coverage for basic searches.
+     */
+    private function fallbackDatabaseSearch(string $message, array $filters, int $limit): array
+    {
+        Log::info('ChatAgent performing fallback database search', [
+            'message' => $message,
+            'filters' => $filters
+        ]);
+        
+        $query = Complaint::with('analysis');
+        
+        // Apply existing filters
+        if (!empty($filters['borough'])) {
+            $query->where('borough', $filters['borough']);
+        }
+        
+        if (!empty($filters['risk_level'])) {
+            $query->whereHas('analysis', function ($q) use ($filters) {
+                switch ($filters['risk_level']) {
+                    case 'high':
+                        $q->where('risk_score', '>=', 0.7);
+                        break;
+                    case 'medium':
+                        $q->whereBetween('risk_score', [0.4, 0.69]);
+                        break;
+                    case 'low':
+                        $q->where('risk_score', '<', 0.4);
+                        break;
+                }
+            });
+        }
+        
+        // Simple text search in complaint type and descriptor
+        $searchTerms = explode(' ', strtolower($message));
+        $searchTerms = array_filter($searchTerms, fn($term) => strlen($term) > 2); // Filter short words
+        
+        if (!empty($searchTerms)) {
+            $query->where(function ($q) use ($searchTerms) {
+                foreach ($searchTerms as $term) {
+                    $q->orWhere('complaint_type', 'ILIKE', "%{$term}%")
+                      ->orWhere('descriptor', 'ILIKE', "%{$term}%");
+                }
+            });
+        }
+        
+        $complaints = $query->latest()->limit($limit)->get();
+        
+        Log::info('ChatAgent fallback search results', [
+            'found_count' => $complaints->count(),
+            'search_terms' => $searchTerms,
+        ]);
+        
+        // Format results in the same structure as HybridSearchService
+        return [
+            'results' => $complaints->map(function ($complaint) {
+                return [
+                    'complaint' => $complaint,
+                    'similarity' => 0.5, // Indicate this is a fallback match
+                ];
+            })->toArray(),
+            'metadata' => [
+                'query' => $message,
+                'total_results' => $complaints->count(),
+                'search_type' => 'fallback_database',
+            ]
+        ];
     }
 
     public function render(): View
