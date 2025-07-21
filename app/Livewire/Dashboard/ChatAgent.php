@@ -190,35 +190,40 @@ class ChatAgent extends Component
     }
 
     /**
-     * Intelligently route user messages to the appropriate handler.
+     * Intelligently route user messages to the appropriate handler using AI.
      *
-     * The key insight here is that different types of questions require
-     * fundamentally different approaches: statistics need database aggregation,
-     * searches need vector similarity, and conversations need AI reasoning.
+     * This uses our Python AI bridge to classify query intent rather than
+     * brittle keyword matching, making it scalable for complex natural language.
      */
     private function processMessage(string $message, int $responseIndex): void
     {
         try {
-            $response = '';
+            // Use AI to classify the query intent and extract parameters
+            $queryAnalysis = $this->analyzeQueryIntent($message);
             
-            // Debug logging to understand routing decisions
-            $isStatistical = $this->isStatisticalQuery($message);
-            $isComplaint = $this->isComplaintQuery($message);
-            
-            Log::info('ChatAgent query routing', [
+            Log::info('ChatAgent AI-powered query routing', [
                 'message' => $message,
-                'is_statistical' => $isStatistical,
-                'is_complaint' => $isComplaint,
-                'route' => $isStatistical ? 'statistical' : ($isComplaint ? 'complaint' : 'general')
+                'intent' => $queryAnalysis['intent'],
+                'parameters' => $queryAnalysis['parameters'],
+                'confidence' => $queryAnalysis['confidence']
             ]);
             
-            // Route based on query intent rather than trying one-size-fits-all
-            if ($isStatistical) {
-                $response = $this->handleStatisticalQuery($message);
-            } elseif ($isComplaint) {
-                $response = $this->handleComplaintQuery($message);
-            } else {
-                $response = $this->handleGeneralQuery($message);
+            $response = '';
+            
+            // Route based on AI-classified intent
+            switch ($queryAnalysis['intent']) {
+                case 'statistical_analysis':
+                    $response = $this->handleStatisticalQuery($message, $queryAnalysis['parameters']);
+                    break;
+                    
+                case 'search_complaints':
+                    $response = $this->handleComplaintQuery($message, $queryAnalysis['parameters']);
+                    break;
+                    
+                case 'general_conversation':
+                default:
+                    $response = $this->handleGeneralQuery($message);
+                    break;
             }
             
             // Replace the placeholder with the actual response
@@ -228,6 +233,12 @@ class ChatAgent extends Component
             }
             
         } catch (\Exception $e) {
+            Log::error('ChatAgent message processing failed', [
+                'message' => $message,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
             // Graceful degradation - show a helpful error instead of breaking
             if (isset($this->messages[$responseIndex])) {
                 $this->messages[$responseIndex]['content'] = "I apologize, but I encountered an error while processing your message. Please try again.";
@@ -241,89 +252,174 @@ class ChatAgent extends Component
     }
     
     /**
-     * Determine if the user wants to search for specific complaints.
+     * Use AI to analyze query intent and extract structured parameters.
      *
-     * These queries should use vector similarity to find individual
-     * complaints that match the user's criteria.
+     * This replaces brittle keyword matching with intelligent classification
+     * that can handle complex natural language queries at scale.
      */
-    private function isComplaintQuery(string $message): bool
-    {
-        $searchKeywords = [
-            'search', 'find', 'show me complaints', 'list complaints', 
-            'show me', 'find me', 'get me', 'look for',
-            // Specific complaint types
-            'graffiti', 'noise', 'water', 'heat', 'parking', 'sanitation',
-            'high-risk', 'high risk', 'risk complaints',
-            // Location-based searches
-            'in manhattan', 'in brooklyn', 'in queens', 'in bronx', 'in staten island',
-            'manhattan', 'brooklyn', 'queens', 'bronx', 'staten island'
-        ];
-        $lowerMessage = strtolower($message);
-        
-        foreach ($searchKeywords as $keyword) {
-            if (str_contains($lowerMessage, $keyword)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Determine if the user wants statistical analysis of the data.
-     *
-     * These queries should use database aggregation to provide summaries,
-     * counts, and breakdowns rather than individual complaint records.
-     */
-    private function isStatisticalQuery(string $message): bool
-    {
-        $statsKeywords = [
-            'most common', 'how many', 'statistics', 'count', 'total', 
-            'percentage', 'breakdown', 'distribution', 'trends', 'summary',
-            'top', 'most frequent', 'average', 'overview', 'analyze',
-            'what are the', 'which are the'
-        ];
-        $lowerMessage = strtolower($message);
-        
-        foreach ($statsKeywords as $keyword) {
-            if (str_contains($lowerMessage, $keyword)) {
-                return true;
-            }
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Handle requests for statistical analysis using database aggregation.
-     *
-     * Rather than searching for specific complaints, this generates summaries
-     * and insights from the entire dataset using SQL aggregation functions.
-     */
-    private function handleStatisticalQuery(string $message): string
+    private function analyzeQueryIntent(string $message): array
     {
         try {
-            $lowerMessage = strtolower($message);
+            $aiBridge = app(PythonAiBridge::class);
             
-            // Route to the most specific handler first
-            if (str_contains($lowerMessage, 'most common') && str_contains($lowerMessage, 'complaint type')) {
-                return $this->getMostCommonComplaintTypes();
+            $intentClassificationPrompt = [
+                'message' => $message,
+                'task' => 'intent_classification',
+                'instructions' => 'Analyze this query about complaint data and return JSON with:
+                - intent: "statistical_analysis" | "search_complaints" | "general_conversation"  
+                - parameters: extracted structured data (complaint_type, borough, time_filter, risk_level, etc.)
+                - confidence: 0.0-1.0 confidence score
+                - reasoning: brief explanation
+                
+                Examples:
+                "which borough has the most gun complaints?" -> statistical_analysis with complaint_type=gun, groupby=borough
+                "where do most noise complaints come from after 9pm?" -> statistical_analysis with complaint_type=noise, time_filter=after_9pm, groupby=location
+                "find water leak complaints in Manhattan" -> search_complaints with complaint_type=water, borough=Manhattan
+                "show me high risk complaints" -> search_complaints with risk_level=high',
+                'session_id' => $this->sessionId
+            ];
+            
+            $result = $aiBridge->chat($intentClassificationPrompt);
+            
+            if (isset($result['response']) && !$result['fallback']) {
+                // Try to parse structured JSON response from AI
+                $parsed = json_decode($result['response'], true);
+                if (json_last_error() === JSON_ERROR_NONE && isset($parsed['intent'])) {
+                    return [
+                        'intent' => $parsed['intent'],
+                        'parameters' => $parsed['parameters'] ?? [],
+                        'confidence' => $parsed['confidence'] ?? 0.8,
+                        'reasoning' => $parsed['reasoning'] ?? ''
+                    ];
+                }
             }
             
-            if (str_contains($lowerMessage, 'borough') && (str_contains($lowerMessage, 'how many') || str_contains($lowerMessage, 'count'))) {
-                return $this->getComplaintsByBorough();
+        } catch (\Exception $e) {
+            Log::warning('ChatAgent intent analysis failed, falling back to simple heuristics', [
+                'message' => $message,
+                'error' => $e->getMessage()
+            ]);
+        }
+        
+        // Fallback to simple heuristics if AI analysis fails
+        return $this->fallbackIntentClassification($message);
+    }
+    
+    /**
+     * Simple fallback intent classification using basic patterns.
+     *
+     * Used when AI intent analysis fails, provides basic routing capability.
+     */
+    private function fallbackIntentClassification(string $message): array
+    {
+        $lowerMessage = strtolower($message);
+        
+        // Statistical query patterns
+        $statPatterns = ['most', 'how many', 'count', 'statistics', 'breakdown', 'which', 'what are', 'percentage'];
+        $isStatistical = false;
+        foreach ($statPatterns as $pattern) {
+            if (str_contains($lowerMessage, $pattern)) {
+                $isStatistical = true;
+                break;
             }
-            
-            if (str_contains($lowerMessage, 'risk') && (str_contains($lowerMessage, 'distribution') || str_contains($lowerMessage, 'breakdown'))) {
-                return $this->getRiskLevelDistribution();
+        }
+        
+        if ($isStatistical) {
+            return [
+                'intent' => 'statistical_analysis',
+                'parameters' => $this->extractBasicParameters($message),
+                'confidence' => 0.6,
+                'reasoning' => 'Fallback statistical pattern matching'
+            ];
+        }
+        
+        // Search query patterns
+        $searchPatterns = ['find', 'search', 'show me', 'list', 'get'];
+        $isSearch = false;
+        foreach ($searchPatterns as $pattern) {
+            if (str_contains($lowerMessage, $pattern)) {
+                $isSearch = true;
+                break;
             }
+        }
+        
+        if ($isSearch) {
+            return [
+                'intent' => 'search_complaints',
+                'parameters' => $this->extractBasicParameters($message),
+                'confidence' => 0.6,
+                'reasoning' => 'Fallback search pattern matching'
+            ];
+        }
+        
+        return [
+            'intent' => 'general_conversation',
+            'parameters' => [],
+            'confidence' => 0.5,
+            'reasoning' => 'No specific pattern detected'
+        ];
+    }
+    
+    /**
+     * Extract basic parameters from message for fallback classification.
+     */
+    private function extractBasicParameters(string $message): array
+    {
+        $lowerMessage = strtolower($message);
+        $parameters = [];
+        
+        // Extract borough
+        $boroughs = ['manhattan', 'brooklyn', 'queens', 'bronx', 'staten island'];
+        foreach ($boroughs as $borough) {
+            if (str_contains($lowerMessage, $borough)) {
+                $parameters['borough'] = strtoupper($borough);
+                break;
+            }
+        }
+        
+        // Extract complaint type
+        $complaintTypes = ['gun', 'noise', 'water', 'heat', 'parking', 'sanitation', 'graffiti'];
+        foreach ($complaintTypes as $type) {
+            if (str_contains($lowerMessage, $type)) {
+                $parameters['complaint_type'] = $type;
+                break;
+            }
+        }
+        
+        // Extract risk level
+        if (str_contains($lowerMessage, 'high risk') || str_contains($lowerMessage, 'high-risk')) {
+            $parameters['risk_level'] = 'high';
+        }
+        
+        // Extract grouping
+        if (str_contains($lowerMessage, 'by borough') || str_contains($lowerMessage, 'borough')) {
+            $parameters['group_by'] = 'borough';
+        }
+        
+        return $parameters;
+    }
+    
+    /**
+     * Handle requests for statistical analysis using AI-extracted parameters.
+     *
+     * This builds flexible SQL queries based on the structured parameters
+     * extracted by AI, making it infinitely scalable for new query patterns.
+     */
+    private function handleStatisticalQuery(string $message, array $parameters): string
+    {
+        try {
+            Log::info('ChatAgent statistical query', [
+                'message' => $message,
+                'parameters' => $parameters
+            ]);
             
-            // Fallback to general statistics for unmatched statistical queries
-            return $this->getGeneralStatistics();
+            // Build flexible statistical query based on parameters
+            return $this->buildStatisticalAnalysis($parameters, $message);
             
         } catch (\Exception $e) {
             Log::error('ChatAgent statistical query failed', [
                 'message' => $message,
+                'parameters' => $parameters,
                 'error' => $e->getMessage()
             ]);
             return "I encountered an error while gathering statistics. Please try asking your question in a different way.";
@@ -331,50 +427,144 @@ class ChatAgent extends Component
     }
     
     /**
-     * Handle searches for specific complaints using vector similarity.
+     * Build flexible statistical analysis based on AI-extracted parameters.
+     *
+     * This replaces hardcoded query routing with dynamic SQL generation,
+     * making the system scalable for any statistical query pattern.
+     */
+    private function buildStatisticalAnalysis(array $parameters, string $originalMessage): string
+    {
+        $query = Complaint::query();
+        $groupBy = $parameters['group_by'] ?? 'complaint_type';
+        $complaintType = $parameters['complaint_type'] ?? null;
+        $borough = $parameters['borough'] ?? null;
+        $riskLevel = $parameters['risk_level'] ?? null;
+        $timeFilter = $parameters['time_filter'] ?? null;
+        
+        // Apply complaint type filter
+        if ($complaintType) {
+            $query->where(function ($q) use ($complaintType) {
+                $q->where('complaint_type', 'ILIKE', "%{$complaintType}%")
+                  ->orWhere('descriptor', 'ILIKE', "%{$complaintType}%");
+            });
+        }
+        
+        // Apply borough filter
+        if ($borough) {
+            $query->where('borough', $borough);
+        }
+        
+        // Apply risk level filter
+        if ($riskLevel) {
+            $query->whereHas('analysis', function ($q) use ($riskLevel) {
+                switch ($riskLevel) {
+                    case 'high':
+                        $q->where('risk_score', '>=', 0.7);
+                        break;
+                    case 'medium':
+                        $q->whereBetween('risk_score', [0.4, 0.69]);
+                        break;
+                    case 'low':
+                        $q->where('risk_score', '<', 0.4);
+                        break;
+                }
+            });
+        }
+        
+        // Apply time filters (basic implementation)
+        if ($timeFilter) {
+            if (str_contains($timeFilter, 'after_9pm') || str_contains($timeFilter, 'evening')) {
+                $query->whereRaw('EXTRACT(hour FROM submitted_at) >= 21');
+            } elseif (str_contains($timeFilter, 'morning')) {
+                $query->whereRaw('EXTRACT(hour FROM submitted_at) BETWEEN 6 AND 12');
+            } elseif (str_contains($timeFilter, 'weekend')) {
+                $query->whereRaw('EXTRACT(dow FROM submitted_at) IN (0, 6)'); // Sunday = 0, Saturday = 6
+            }
+        }
+        
+        // Group and count based on the groupBy parameter
+        switch ($groupBy) {
+            case 'borough':
+                $results = $query->select('borough')
+                    ->selectRaw('COUNT(*) as count')
+                    ->groupBy('borough')
+                    ->orderByDesc('count')
+                    ->get();
+                return $this->formatBoroughStatistics($results, $complaintType, $originalMessage);
+                
+            case 'complaint_type':
+                $results = $query->select('complaint_type')
+                    ->selectRaw('COUNT(*) as count')
+                    ->groupBy('complaint_type')
+                    ->orderByDesc('count')
+                    ->limit(10)
+                    ->get();
+                return $this->formatComplaintTypeStatistics($results, $borough, $originalMessage);
+                
+            case 'time':
+                $results = $query->selectRaw('
+                    CASE 
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 6 AND 12 THEN \'Morning (6AM-12PM)\'
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 12 AND 18 THEN \'Afternoon (12PM-6PM)\'
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 18 AND 22 THEN \'Evening (6PM-10PM)\'
+                        ELSE \'Night (10PM-6AM)\'
+                    END as time_period,
+                    COUNT(*) as count
+                ')
+                ->groupByRaw('
+                    CASE 
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 6 AND 12 THEN \'Morning (6AM-12PM)\'
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 12 AND 18 THEN \'Afternoon (12PM-6PM)\'
+                        WHEN EXTRACT(hour FROM submitted_at) BETWEEN 18 AND 22 THEN \'Evening (6PM-10PM)\'
+                        ELSE \'Night (10PM-6AM)\'
+                    END
+                ')
+                ->orderByDesc('count')
+                ->get();
+                return $this->formatTimeStatistics($results, $complaintType, $originalMessage);
+                
+            default:
+                // Default to borough breakdown
+                $results = $query->select('borough')
+                    ->selectRaw('COUNT(*) as count')
+                    ->groupBy('borough')
+                    ->orderByDesc('count')
+                    ->get();
+                return $this->formatBoroughStatistics($results, $complaintType, $originalMessage);
+        }
+    }
+    
+    /**
+     * Handle searches for specific complaints using AI-extracted parameters.
      *
      * This leverages our hybrid search system to find individual complaints
-     * that semantically match the user's query, rather than aggregate data.
+     * using structured filters extracted by AI from natural language.
      */
-    private function handleComplaintQuery(string $message): string
+    private function handleComplaintQuery(string $message, array $parameters): string
     {
         try {
-            $lowerMessage = strtolower($message);
+            // Convert AI parameters to search filters
             $filters = [];
             $options = [
                 'limit' => 5,
-                'similarity_threshold' => 0.3  // Lower threshold for better recall
+                'similarity_threshold' => 0.3
             ];
             
-            // Extract filters from the message
-            if (str_contains($lowerMessage, 'manhattan')) {
-                $filters['borough'] = 'MANHATTAN';
-            } elseif (str_contains($lowerMessage, 'brooklyn')) {
-                $filters['borough'] = 'BROOKLYN';
-            } elseif (str_contains($lowerMessage, 'queens')) {
-                $filters['borough'] = 'QUEENS';
-            } elseif (str_contains($lowerMessage, 'bronx')) {
-                $filters['borough'] = 'BRONX';
-            } elseif (str_contains($lowerMessage, 'staten island')) {
-                $filters['borough'] = 'STATEN ISLAND';
+            if (isset($parameters['borough'])) {
+                $filters['borough'] = $parameters['borough'];
             }
             
-            // Handle high-risk complaint searches
-            if (str_contains($lowerMessage, 'high-risk') || str_contains($lowerMessage, 'high risk')) {
-                $filters['risk_level'] = 'high';
+            if (isset($parameters['risk_level'])) {
+                $filters['risk_level'] = $parameters['risk_level'];
+            }
+            
+            if (isset($parameters['complaint_type'])) {
+                // Use complaint type as part of the search query for better semantic matching
+                $message = $message . ' ' . $parameters['complaint_type'];
             }
             
             $searchService = app(HybridSearchService::class);
             $results = $searchService->search($message, $filters, $options);
-            
-            // Log search metrics for monitoring and debugging
-            Log::info('ChatAgent search results', [
-                'query' => $message,
-                'filters' => $filters,
-                'results_count' => count($results['results'] ?? []),
-                'has_results' => !empty($results['results']),
-                'first_result_type' => !empty($results['results']) ? gettype($results['results'][0]['complaint'] ?? null) : 'none'
-            ]);
             
             // If hybrid search returns no results, try a simple database search as fallback
             if (empty($results['results'])) {
@@ -385,14 +575,90 @@ class ChatAgent extends Component
             return $this->formatComplaintResults($results);
             
         } catch (\Exception $e) {
-            Log::error('ChatAgent complaint query failed', [
+            Log::error('ChatAgent complaint search failed', [
                 'message' => $message,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
+                'parameters' => $parameters,
+                'error' => $e->getMessage()
             ]);
-            // Graceful fallback to general AI handling if search fails
             return $this->handleGeneralQuery($message);
         }
+    }
+    
+    /**
+     * Format borough statistics with contextual messaging.
+     */
+    private function formatBoroughStatistics($results, $complaintType, $originalMessage): string
+    {
+        if ($results->isEmpty()) {
+            $typeText = $complaintType ? "{$complaintType} " : '';
+            return "I couldn't find any {$typeText}complaints in the database.";
+        }
+        
+        $total = $results->sum('count');
+        $typeText = $complaintType ? "{$complaintType} " : '';
+        $response = "**Borough breakdown for {$typeText}complaints:**\n\n";
+        
+        foreach ($results as $index => $borough) {
+            $percentage = $total > 0 ? round(($borough->count / $total) * 100, 1) : 0;
+            $indicator = $index === 0 ? ' 👑 **MOST**' : '';
+            $response .= ($index + 1) . ". **{$borough->borough}**{$indicator} - {$borough->count} complaints ({$percentage}%)\n";
+        }
+        
+        $topBorough = $results->first();
+        $response .= "\n**Answer:** {$topBorough->borough} has the most {$typeText}complaints with {$topBorough->count} reports.";
+        $response .= "\n\n**Total {$typeText}complaints:** {$total}";
+        
+        return $response;
+    }
+    
+    /**
+     * Format complaint type statistics with contextual messaging.
+     */
+    private function formatComplaintTypeStatistics($results, $borough, $originalMessage): string
+    {
+        if ($results->isEmpty()) {
+            $boroughText = $borough ? "in {$borough} " : '';
+            return "I couldn't find any complaints {$boroughText}in the database.";
+        }
+        
+        $total = $results->sum('count');
+        $boroughText = $borough ? "in {$borough} " : '';
+        $response = "**Most common complaint types {$boroughText}:**\n\n";
+        
+        foreach ($results as $index => $type) {
+            $percentage = $total > 0 ? round(($type->count / $total) * 100, 1) : 0;
+            $response .= ($index + 1) . ". **{$type->complaint_type}** - {$type->count} complaints ({$percentage}%)\n";
+        }
+        
+        $response .= "\n**Total complaints {$boroughText}:** {$total}";
+        return $response;
+    }
+    
+    /**
+     * Format time-based statistics with contextual messaging.
+     */
+    private function formatTimeStatistics($results, $complaintType, $originalMessage): string
+    {
+        if ($results->isEmpty()) {
+            $typeText = $complaintType ? "{$complaintType} " : '';
+            return "I couldn't find any {$typeText}complaints with time data.";
+        }
+        
+        $total = $results->sum('count');
+        $typeText = $complaintType ? "{$complaintType} " : '';
+        $response = "**{$typeText}Complaints by time of day:**\n\n";
+        
+        foreach ($results as $index => $timeSlot) {
+            $percentage = $total > 0 ? round(($timeSlot->count / $total) * 100, 1) : 0;
+            $indicator = $index === 0 ? ' 🕐 **PEAK TIME**' : '';
+            $response .= ($index + 1) . ". **{$timeSlot->time_period}**{$indicator} - {$timeSlot->count} complaints ({$percentage}%)\n";
+        }
+        
+        $peakTime = $results->first();
+        $response .= "\n**Answer:** Most {$typeText}complaints occur during {$peakTime->time_period} with {$peakTime->count} reports.";
+        $response .= "\n\n**Total {$typeText}complaints:** {$total}";
+        
+        return $response;
     }
     
     /**
@@ -530,6 +796,141 @@ class ChatAgent extends Component
         $response .= "• **Low Risk (<0.4):** {$riskStats->low_risk} complaints (" . round(($riskStats->low_risk / $riskStats->total) * 100, 1) . "%)\n\n";
         $response .= "**Average Risk Score:** " . number_format($riskStats->avg_risk_score, 2) . "\n";
         $response .= "**Total Analyzed:** {$riskStats->total} complaints";
+        
+        return $response;
+    }
+    
+    /**
+     * Find which borough has the most complaints of a specific type.
+     *
+     * Parses complaint type from natural language queries like
+     * "which borough has the most gun complaints?" and returns
+     * borough-by-borough breakdown for that specific complaint type.
+     */
+    private function getBoroughWithMostComplaints(string $message): string
+    {
+        $lowerMessage = strtolower($message);
+        
+        // Extract complaint type keywords from the message
+        $complaintTypeMap = [
+            'gun' => ['gun', 'firearm', 'weapon', 'shooting'],
+            'noise' => ['noise', 'loud', 'music', 'sound'],
+            'water' => ['water', 'leak', 'pipe', 'plumbing'],
+            'heat' => ['heat', 'heating', 'hot water', 'boiler'],
+            'parking' => ['parking', 'vehicle', 'car', 'truck'],
+            'sanitation' => ['garbage', 'trash', 'sanitation', 'waste'],
+            'graffiti' => ['graffiti', 'vandalism', 'spray paint'],
+            'street' => ['street', 'road', 'pothole', 'sidewalk'],
+            'animal' => ['animal', 'dog', 'cat', 'rat', 'pest'],
+            'drug' => ['drug', 'narcotic', 'substance', 'illegal']
+        ];
+        
+        $detectedTypes = [];
+        foreach ($complaintTypeMap as $category => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($lowerMessage, $keyword)) {
+                    $detectedTypes[] = $category;
+                    break;
+                }
+            }
+        }
+        
+        // Build the query
+        $query = Complaint::select('borough')
+            ->selectRaw('COUNT(*) as count')
+            ->groupBy('borough')
+            ->orderByDesc('count');
+        
+        // Apply complaint type filter if detected
+        if (!empty($detectedTypes)) {
+            $query->where(function ($q) use ($detectedTypes) {
+                foreach ($detectedTypes as $type) {
+                    switch ($type) {
+                        case 'gun':
+                            $q->orWhere('complaint_type', 'ILIKE', '%weapon%')
+                              ->orWhere('complaint_type', 'ILIKE', '%gun%')
+                              ->orWhere('complaint_type', 'ILIKE', '%firearm%')
+                              ->orWhere('complaint_type', 'ILIKE', '%shooting%')
+                              ->orWhere('descriptor', 'ILIKE', '%gun%')
+                              ->orWhere('descriptor', 'ILIKE', '%weapon%')
+                              ->orWhere('descriptor', 'ILIKE', '%firearm%')
+                              ->orWhere('descriptor', 'ILIKE', '%shooting%');
+                            break;
+                        case 'noise':
+                            $q->orWhere('complaint_type', 'ILIKE', '%noise%')
+                              ->orWhere('descriptor', 'ILIKE', '%noise%')
+                              ->orWhere('descriptor', 'ILIKE', '%loud%');
+                            break;
+                        case 'water':
+                            $q->orWhere('complaint_type', 'ILIKE', '%water%')
+                              ->orWhere('descriptor', 'ILIKE', '%water%')
+                              ->orWhere('descriptor', 'ILIKE', '%leak%')
+                              ->orWhere('descriptor', 'ILIKE', '%pipe%');
+                            break;
+                        case 'heat':
+                            $q->orWhere('complaint_type', 'ILIKE', '%heat%')
+                              ->orWhere('complaint_type', 'ILIKE', '%hot water%')
+                              ->orWhere('descriptor', 'ILIKE', '%heat%')
+                              ->orWhere('descriptor', 'ILIKE', '%heating%');
+                            break;
+                        case 'parking':
+                            $q->orWhere('complaint_type', 'ILIKE', '%parking%')
+                              ->orWhere('descriptor', 'ILIKE', '%parking%')
+                              ->orWhere('descriptor', 'ILIKE', '%vehicle%');
+                            break;
+                        case 'sanitation':
+                            $q->orWhere('complaint_type', 'ILIKE', '%sanitation%')
+                              ->orWhere('complaint_type', 'ILIKE', '%garbage%')
+                              ->orWhere('descriptor', 'ILIKE', '%trash%')
+                              ->orWhere('descriptor', 'ILIKE', '%garbage%');
+                            break;
+                        case 'graffiti':
+                            $q->orWhere('complaint_type', 'ILIKE', '%graffiti%')
+                              ->orWhere('descriptor', 'ILIKE', '%graffiti%')
+                              ->orWhere('descriptor', 'ILIKE', '%vandalism%');
+                            break;
+                        case 'street':
+                            $q->orWhere('complaint_type', 'ILIKE', '%street%')
+                              ->orWhere('complaint_type', 'ILIKE', '%road%')
+                              ->orWhere('descriptor', 'ILIKE', '%pothole%')
+                              ->orWhere('descriptor', 'ILIKE', '%sidewalk%');
+                            break;
+                        case 'animal':
+                            $q->orWhere('complaint_type', 'ILIKE', '%animal%')
+                              ->orWhere('descriptor', 'ILIKE', '%animal%')
+                              ->orWhere('descriptor', 'ILIKE', '%dog%')
+                              ->orWhere('descriptor', 'ILIKE', '%rat%');
+                            break;
+                        case 'drug':
+                            $q->orWhere('complaint_type', 'ILIKE', '%drug%')
+                              ->orWhere('descriptor', 'ILIKE', '%drug%')
+                              ->orWhere('descriptor', 'ILIKE', '%narcotic%');
+                            break;
+                    }
+                }
+            });
+        }
+        
+        $boroughStats = $query->get();
+        
+        if ($boroughStats->isEmpty()) {
+            $typeText = !empty($detectedTypes) ? implode('/', $detectedTypes) . ' ' : '';
+            return "I couldn't find any {$typeText}complaints in the database.";
+        }
+        
+        $total = $boroughStats->sum('count');
+        $typeText = !empty($detectedTypes) ? implode('/', $detectedTypes) . ' ' : '';
+        $response = "**Borough breakdown for {$typeText}complaints:**\n\n";
+        
+        foreach ($boroughStats as $index => $borough) {
+            $percentage = $total > 0 ? round(($borough->count / $total) * 100, 1) : 0;
+            $indicator = $index === 0 ? ' 👑 **MOST**' : '';
+            $response .= ($index + 1) . ". **{$borough->borough}**{$indicator} - {$borough->count} complaints ({$percentage}%)\n";
+        }
+        
+        $topBorough = $boroughStats->first();
+        $response .= "\n**Answer:** {$topBorough->borough} has the most {$typeText}complaints with {$topBorough->count} reports.";
+        $response .= "\n\n**Total {$typeText}complaints:** {$total}";
         
         return $response;
     }
