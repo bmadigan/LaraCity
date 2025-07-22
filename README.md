@@ -3,7 +3,9 @@
 > **🎯 Educational Focus**: A comprehensive tutorial demonstrating **LangChain RAG integration** with real-world civic data, showcasing modern Laravel architecture patterns and production-ready AI implementation.
 
 ### The Tutorial Series:
-[!LaraCity - Municipal AI Complaint System](https://madigan.dev/blog/mastering-ai-engineering-building-a-production-ready-ai-complaint-system-with-laravel-langchain)
+[LaraCity - Municipal AI Complaint System](https://madigan.dev/blog/mastering-ai-engineering-building-a-production-ready-ai-complaint-system-with-laravel-langchain)
+
+---
 
 [![Laravel](https://img.shields.io/badge/Laravel-12.x-red.svg)](https://laravel.com)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
@@ -47,7 +49,7 @@ This project serves as a **beginner's guide to LangChain integration** using rea
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/LaraCity.git
+git clone https://github.com/bmadigan/LaraCity.git
 cd LaraCity
 
 # Install PHP dependencies
