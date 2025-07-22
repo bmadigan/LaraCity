@@ -910,7 +910,7 @@ class ChatAgent extends Component
         $response .= "• **High Risk (≥0.7):** {$riskStats->high_risk} complaints (" . round(($riskStats->high_risk / $riskStats->total) * 100, 1) . "%)\n";
         $response .= "• **Medium Risk (0.4-0.69):** {$riskStats->medium_risk} complaints (" . round(($riskStats->medium_risk / $riskStats->total) * 100, 1) . "%)\n";
         $response .= "• **Low Risk (<0.4):** {$riskStats->low_risk} complaints (" . round(($riskStats->low_risk / $riskStats->total) * 100, 1) . "%)\n\n";
-        $response .= "**Average Risk Score:** " . number_format($riskStats->avg_risk_score, 2) . "\n";
+        $response .= "**Average Risk Score:** " . number_format((float) $riskStats->avg_risk_score, 2) . "\n";
         $response .= "**Total Analyzed:** {$riskStats->total} complaints";
         
         return $response;
@@ -1127,6 +1127,8 @@ class ChatAgent extends Component
             // Include AI risk assessment if available
             if ($analysis) {
                 $riskScore = is_array($analysis) ? $analysis['risk_score'] : $analysis->risk_score;
+                // Ensure risk score is numeric
+                $riskScore = (float) $riskScore;
                 $riskLevel = $riskScore >= 0.7 ? 'High' : 
                             ($riskScore >= 0.4 ? 'Medium' : 'Low');
                 $response .= "   - Risk Level: {$riskLevel} (" . number_format($riskScore, 2) . ")\n";
