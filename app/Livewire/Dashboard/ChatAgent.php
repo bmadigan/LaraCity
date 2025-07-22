@@ -161,12 +161,10 @@ class ChatAgent extends Component
         $error = $data['error'] ?? 'An error occurred while processing your message.';
         
         // Update message with error
-        $message = $this->messages->get($responseIndex);
-        if ($message) {
-            $message['content'] = "I apologize, but I encountered an error: {$error}";
-            $message['isError'] = true;
-            unset($message['isStreaming']);
-            $this->messages->put($responseIndex, $message);
+        if (isset($this->messages[$responseIndex])) {
+            $this->messages[$responseIndex]['content'] = "I apologize, but I encountered an error: {$error}";
+            $this->messages[$responseIndex]['isError'] = true;
+            unset($this->messages[$responseIndex]['isStreaming']);
         }
         
         $this->isProcessing = false;
@@ -1050,19 +1048,19 @@ class ChatAgent extends Component
             $complaint = $result['complaint'];
             if (is_array($complaint)) {
                 // Enhanced complaint data from HybridSearchService
-                $complaintNumber = $complaint['complaint_number'];
-                $type = $complaint['type'];
-                $borough = $complaint['borough'];
-                $status = $complaint['status'];
-                $description = $complaint['description'];
+                $complaintNumber = $complaint['complaint_number'] ?? 'Unknown';
+                $type = $complaint['type'] ?? 'Unknown';
+                $borough = $complaint['borough'] ?? 'Unknown';
+                $status = $complaint['status'] ?? 'Unknown';
+                $description = $complaint['description'] ?? '';
                 $analysis = $complaint['analysis'] ?? null;
             } else {
                 // Raw Eloquent model from fallback searches
-                $complaintNumber = $complaint->complaint_number;
-                $type = $complaint->complaint_type;
-                $borough = $complaint->borough;
-                $status = $complaint->status;
-                $description = $complaint->descriptor;
+                $complaintNumber = $complaint->complaint_number ?? 'Unknown';
+                $type = $complaint->complaint_type ?? 'Unknown';
+                $borough = $complaint->borough ?? 'Unknown';
+                $status = $complaint->status ?? 'Unknown';
+                $description = $complaint->descriptor ?? '';
                 $analysis = $complaint->analysis ?? null;
             }
             
@@ -1079,7 +1077,15 @@ class ChatAgent extends Component
                 $response .= "   - Risk Level: {$riskLevel} (" . number_format($riskScore, 2) . ")\n";
             }
             
-            $response .= "   - Description: " . substr($description, 0, 100) . "...\n\n";
+            // Only show description if it's not empty
+            if (!empty($description)) {
+                $truncatedDescription = strlen($description) > 100 
+                    ? substr($description, 0, 100) . "..." 
+                    : $description;
+                $response .= "   - Description: {$truncatedDescription}\n\n";
+            } else {
+                $response .= "   - Description: No description available\n\n";
+            }
         }
 
         $response .= "\nWould you like more details about any of these complaints or search for something else?";
