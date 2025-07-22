@@ -2,7 +2,7 @@
 
 > **🎯 Educational Focus**: A comprehensive tutorial demonstrating **LangChain RAG integration** with real-world civic data, showcasing modern Laravel architecture patterns and production-ready AI implementation.
 
-[![Laravel](https://img.shields.io/badge/Laravel-11.x-red.svg)](https://laravel.com)
+[![Laravel](https://img.shields.io/badge/Laravel-12.x-red.svg)](https://laravel.com)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![LangChain](https://img.shields.io/badge/LangChain-0.1+-green.svg)](https://langchain.com)
 [![pgvector](https://img.shields.io/badge/pgvector-0.7+-purple.svg)](https://github.com/pgvector/pgvector)
@@ -34,7 +34,7 @@ This project serves as a **beginner's guide to LangChain integration** using rea
 
 ### Prerequisites
 
-- **PHP 8.2+** with Laravel 11.x
+- **PHP 8.2+** with Laravel 12.x
 - **PostgreSQL 15+** with pgvector extension
 - **Python 3.8+** for LangChain components
 - **Node.js 18+** (optional, for frontend development)
@@ -242,7 +242,7 @@ curl -X POST "http://laracity.test/api/search/semantic" \
   -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
-    "query": "water leak in apartment building", 
+    "query": "water leak in apartment building",
     "filters": {"borough": "MANHATTAN", "risk_level": "high"},
     "options": {"vector_weight": 0.7, "metadata_weight": 0.3}
   }'
@@ -278,7 +278,7 @@ tail -f storage/logs/laravel.log
 # Generate embeddings for new complaints
 php artisan lacity:generate-embeddings --type=complaints --limit=100
 
-# Test vector store functionality  
+# Test vector store functionality
 php artisan lacity:vector-store test
 
 # Import new NYC 311 data
@@ -346,7 +346,7 @@ Each phase includes:
 - `GET /api/complaints/{id}` - Individual complaint details
 - `POST /api/actions/escalate` - Batch escalation operations
 
-### Semantic Search  
+### Semantic Search
 - `POST /api/search/semantic` - Hybrid vector + metadata search
 - `POST /api/search/similar` - Pure vector similarity search
 - `POST /api/search/embed` - Generate embeddings via API
@@ -367,7 +367,7 @@ LaraCity includes comprehensive CLI tools for management and operations:
 # Import NYC 311 complaint data
 php artisan lacity:import-csv --file=data.csv --validate
 
-# Generate AI analysis for existing complaints  
+# Generate AI analysis for existing complaints
 php artisan queue:work --queue=ai-analysis
 ```
 
