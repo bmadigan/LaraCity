@@ -205,7 +205,8 @@ class ChatAgent extends Component
                 'message' => $message,
                 'intent' => $queryAnalysis['intent'],
                 'parameters' => $queryAnalysis['parameters'],
-                'confidence' => $queryAnalysis['confidence']
+                'confidence' => $queryAnalysis['confidence'],
+                'reasoning' => $queryAnalysis['reasoning'] ?? 'No reasoning provided'
             ]);
             
             $response = '';
@@ -271,11 +272,15 @@ class ChatAgent extends Component
                 - confidence: 0.0-1.0 confidence score
                 - reasoning: brief explanation
                 
+                IMPORTANT: This system tracks COMPLAINTS about issues, not people or entities being added/removed from databases.
+                
                 Examples:
                 "which borough has the most gun complaints?" -> statistical_analysis with complaint_type=gun, groupby=borough
                 "where do most noise complaints come from after 9pm?" -> statistical_analysis with complaint_type=noise, time_filter=after_9pm, groupby=location
                 "find water leak complaints in Manhattan" -> search_complaints with complaint_type=water, borough=Manhattan
-                "show me high risk complaints" -> search_complaints with risk_level=high',
+                "show me high risk complaints" -> search_complaints with risk_level=high
+                "how many homeless person has been added?" -> general_conversation (asking about adding people, not complaints)
+                "how many complaints about homeless people?" -> statistical_analysis with complaint_type=homeless',
                 'session_id' => $this->sessionId
             ];
             
@@ -314,9 +319,32 @@ class ChatAgent extends Component
     {
         $lowerMessage = strtolower($message);
         
-        // Statistical query patterns
+        // Check for non-complaint queries first (people being added/removed, system operations)
+        $nonComplaintPatterns = ['has been added', 'have been added', 'adding people', 'adding users', 'people added', 'users added'];
+        $isNonComplaint = false;
+        foreach ($nonComplaintPatterns as $pattern) {
+            if (str_contains($lowerMessage, $pattern)) {
+                $isNonComplaint = true;
+                break;
+            }
+        }
+        
+        if ($isNonComplaint) {
+            return [
+                'intent' => 'general_conversation',
+                'parameters' => [],
+                'confidence' => 0.8,
+                'reasoning' => 'Query about adding/removing entities, not complaints'
+            ];
+        }
+        
+        // Statistical query patterns (only for complaint-related queries)
         $statPatterns = ['most', 'how many', 'count', 'statistics', 'breakdown', 'which', 'what are', 'percentage'];
+        $complaintRelated = ['complaint', 'report', 'issue', 'problem'];
+        
         $isStatistical = false;
+        $hasComplaintContext = false;
+        
         foreach ($statPatterns as $pattern) {
             if (str_contains($lowerMessage, $pattern)) {
                 $isStatistical = true;
@@ -324,12 +352,34 @@ class ChatAgent extends Component
             }
         }
         
-        if ($isStatistical) {
+        foreach ($complaintRelated as $context) {
+            if (str_contains($lowerMessage, $context)) {
+                $hasComplaintContext = true;
+                break;
+            }
+        }
+        
+        // Only classify as statistical if it's both statistical AND complaint-related
+        // OR if it mentions locations/types that suggest complaint analysis
+        $locationMentioned = str_contains($lowerMessage, 'borough') || 
+                           str_contains($lowerMessage, 'manhattan') || 
+                           str_contains($lowerMessage, 'brooklyn') ||
+                           str_contains($lowerMessage, 'queens') ||
+                           str_contains($lowerMessage, 'bronx') ||
+                           str_contains($lowerMessage, 'staten island');
+                           
+        $complaintTypeMentioned = str_contains($lowerMessage, 'gun') ||
+                                str_contains($lowerMessage, 'noise') ||
+                                str_contains($lowerMessage, 'water') ||
+                                str_contains($lowerMessage, 'heat') ||
+                                str_contains($lowerMessage, 'parking');
+        
+        if ($isStatistical && ($hasComplaintContext || $locationMentioned || $complaintTypeMentioned)) {
             return [
                 'intent' => 'statistical_analysis',
                 'parameters' => $this->extractBasicParameters($message),
                 'confidence' => 0.6,
-                'reasoning' => 'Fallback statistical pattern matching'
+                'reasoning' => 'Fallback statistical pattern matching with complaint context'
             ];
         }
         
@@ -669,6 +719,18 @@ class ChatAgent extends Component
      */
     private function handleGeneralQuery(string $message): string
     {
+        $lowerMessage = strtolower($message);
+        
+        // Check for specific misunderstood query patterns and provide helpful explanations
+        if (str_contains($lowerMessage, 'has been added') || str_contains($lowerMessage, 'have been added')) {
+            return "I understand you're asking about adding records to a system, but LaraCity tracks **complaints about issues**, not adding people or entities to databases.\n\n" .
+                   "If you're looking for:\n" .
+                   "• **Complaints involving homeless people** → Try: \"show me complaints about homeless people\"\n" .
+                   "• **Statistics about housing complaints** → Try: \"how many housing complaints are there?\"\n" .
+                   "• **General complaint statistics** → Try: \"what are the most common complaint types?\"\n\n" .
+                   "How can I help you analyze complaint data instead?";
+        }
+        
         // Provide recent complaint context to make AI responses more relevant
         $recentComplaints = Complaint::with('analysis')
             ->latest()
@@ -687,7 +749,8 @@ class ChatAgent extends Component
             $result = $aiBridge->chat([
                 'message' => $message,
                 'session_id' => $this->sessionId,
-                'complaint_data' => $recentComplaints
+                'complaint_data' => $recentComplaints,
+                'context' => 'This system analyzes NYC 311 complaints, not adding/removing people from databases.'
             ]);
             
             if (isset($result['response']) && !$result['fallback']) {
