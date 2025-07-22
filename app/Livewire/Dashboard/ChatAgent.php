@@ -277,6 +277,10 @@ class ChatAgent extends Component
                 "where do most noise complaints come from after 9pm?" -> statistical_analysis with complaint_type=noise, time_filter=after_9pm, groupby=location
                 "find water leak complaints in Manhattan" -> search_complaints with complaint_type=water, borough=Manhattan
                 "show me high risk complaints" -> search_complaints with risk_level=high
+                "any dirty conditions anywhere in the past week?" -> search_complaints with complaint_type=sanitation/dirty, time_filter=past_week
+                "are there graffiti issues in Brooklyn?" -> search_complaints with complaint_type=graffiti, borough=Brooklyn
+                "has anyone complained about noise?" -> search_complaints with complaint_type=noise
+                "what problems were reported yesterday?" -> search_complaints with time_filter=yesterday
                 "how many homeless person has been added?" -> general_conversation (asking about adding people, not complaints)
                 "how many complaints about homeless people?" -> statistical_analysis with complaint_type=homeless',
                 'session_id' => $this->sessionId
@@ -381,8 +385,14 @@ class ChatAgent extends Component
             ];
         }
         
-        // Search query patterns
-        $searchPatterns = ['find', 'search', 'show me', 'list', 'get'];
+        // Search query patterns - expanded to include conversational queries
+        $searchPatterns = [
+            'find', 'search', 'show me', 'list', 'get',
+            'any', 'are there', 'were there', 'has there been', 'have there been',
+            'is there', 'was there', 'anyone', 'anybody', 'someone',
+            'what about', 'how about', 'tell me about', 'what problems',
+            'what issues', 'what complaints', 'reported', 'complained'
+        ];
         $isSearch = false;
         foreach ($searchPatterns as $pattern) {
             if (str_contains($lowerMessage, $pattern)) {
@@ -425,12 +435,23 @@ class ChatAgent extends Component
             }
         }
         
-        // Extract complaint type
-        $complaintTypes = ['gun', 'noise', 'water', 'heat', 'parking', 'sanitation', 'graffiti'];
-        foreach ($complaintTypes as $type) {
-            if (str_contains($lowerMessage, $type)) {
-                $parameters['complaint_type'] = $type;
-                break;
+        // Extract complaint type - expanded with synonyms and related terms
+        $complaintTypeMap = [
+            'sanitation' => ['dirty', 'garbage', 'trash', 'sanitation', 'waste', 'filthy', 'unsanitary', 'litter'],
+            'noise' => ['noise', 'loud', 'noisy', 'sound', 'music', 'quiet'],
+            'graffiti' => ['graffiti', 'vandalism', 'tagging', 'spray paint', 'defacement'],
+            'water' => ['water', 'leak', 'flooding', 'pipe', 'plumbing', 'drip'],
+            'heat' => ['heat', 'heating', 'cold', 'hot water', 'boiler', 'temperature'],
+            'parking' => ['parking', 'vehicle', 'car', 'truck', 'double parked'],
+            'gun' => ['gun', 'shooting', 'weapon', 'firearm', 'shots']
+        ];
+        
+        foreach ($complaintTypeMap as $type => $keywords) {
+            foreach ($keywords as $keyword) {
+                if (str_contains($lowerMessage, $keyword)) {
+                    $parameters['complaint_type'] = $type;
+                    break 2;
+                }
             }
         }
         
@@ -442,6 +463,17 @@ class ChatAgent extends Component
         // Extract grouping
         if (str_contains($lowerMessage, 'by borough') || str_contains($lowerMessage, 'borough')) {
             $parameters['group_by'] = 'borough';
+        }
+        
+        // Extract time filters
+        if (str_contains($lowerMessage, 'past week') || str_contains($lowerMessage, 'last week')) {
+            $parameters['time_filter'] = 'past_week';
+        } elseif (str_contains($lowerMessage, 'yesterday')) {
+            $parameters['time_filter'] = 'yesterday';
+        } elseif (str_contains($lowerMessage, 'today')) {
+            $parameters['time_filter'] = 'today';
+        } elseif (str_contains($lowerMessage, 'past month') || str_contains($lowerMessage, 'last month')) {
+            $parameters['time_filter'] = 'past_month';
         }
         
         return $parameters;
@@ -609,6 +641,25 @@ class ChatAgent extends Component
             if (isset($parameters['complaint_type'])) {
                 // Use complaint type as part of the search query for better semantic matching
                 $message = $message . ' ' . $parameters['complaint_type'];
+            }
+            
+            // Apply time filter if present
+            if (isset($parameters['time_filter'])) {
+                switch ($parameters['time_filter']) {
+                    case 'past_week':
+                        $filters['created_after'] = now()->subWeek()->toDateString();
+                        break;
+                    case 'yesterday':
+                        $filters['created_after'] = now()->subDay()->startOfDay()->toDateString();
+                        $filters['created_before'] = now()->subDay()->endOfDay()->toDateString();
+                        break;
+                    case 'today':
+                        $filters['created_after'] = now()->startOfDay()->toDateString();
+                        break;
+                    case 'past_month':
+                        $filters['created_after'] = now()->subMonth()->toDateString();
+                        break;
+                }
             }
             
             $searchService = app(HybridSearchService::class);
