@@ -49,8 +49,8 @@
     {{-- Filters --}}
     <flux:card class="p-4">
         <div class="grid gap-4 md:grid-cols-5">
-            <flux:input 
-                wire:model.live.debounce.300ms="search" 
+            <flux:input
+                wire:model.live.debounce.300ms="search"
                 placeholder="Search complaints..."
                 type="search"
                 class="md:col-span-2"
@@ -105,7 +105,7 @@
                             @endif
                         </flux:button>
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         <flux:button variant="ghost" size="sm" wire:click="sortBy('complaint_type')" class="flex items-center gap-1">
                             Type
@@ -114,11 +114,11 @@
                             @endif
                         </flux:button>
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         Borough
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         <flux:button variant="ghost" size="sm" wire:click="sortBy('status')" class="flex items-center gap-1">
                             Status
@@ -127,11 +127,11 @@
                             @endif
                         </flux:button>
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         Risk Level
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         <flux:button variant="ghost" size="sm" wire:click="sortBy('created_at')" class="flex items-center gap-1">
                             Created
@@ -140,7 +140,7 @@
                             @endif
                         </flux:button>
                     </th>
-                    
+
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
                         Actions
                     </th>
@@ -153,18 +153,18 @@
                         <td class="whitespace-nowrap px-6 py-4 text-sm font-medium text-zinc-900 dark:text-zinc-100">
                             {{ $complaint->complaint_number }}
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm text-zinc-500 dark:text-zinc-400">
                             {{ $complaint->complaint_type }}
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm">
                             <flux:badge size="sm" color="blue">{{ $complaint->borough }}</flux:badge>
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm">
-                            <flux:badge 
-                                size="sm" 
+                            <flux:badge
+                                size="sm"
                                 :color="match($complaint->status) {
                                     'Open' => 'green',
                                     'InProgress' => 'blue',
@@ -176,7 +176,7 @@
                                 {{ $complaint->status }}
                             </flux:badge>
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm">
                             @if($complaint->analysis)
                                 @php
@@ -191,17 +191,17 @@
                                 <flux:badge size="sm" color="zinc">Pending</flux:badge>
                             @endif
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm text-zinc-500 dark:text-zinc-400">
                             {{ \Carbon\Carbon::parse($complaint->created_at)->diffForHumans() }}
                         </td>
-                        
+
                         <td class="whitespace-nowrap px-6 py-4 text-sm">
                             <flux:dropdown>
                                 <flux:button variant="ghost" size="sm">
                                     <flux:icon.ellipsis-horizontal class="h-4 w-4" />
                                 </flux:button>
-                                
+
                                 <flux:menu>
                                     <flux:menu.item icon="eye">View Details</flux:menu.item>
                                     <flux:menu.item icon="magnifying-glass">Find Similar</flux:menu.item>
