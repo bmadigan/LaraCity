@@ -42,7 +42,7 @@ This project serves as a **beginner's guide to LangChain integration** using rea
 
 ### Prerequisites
 
-- **PHP 8.2+** with Laravel 12.x
+- **PHP 8.3+** with Laravel 12.x
 - **PostgreSQL 15+** with pgvector extension
 - **Python 3.8+** for LangChain components
 - **Node.js 18+** (optional, for frontend development)
