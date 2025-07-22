@@ -456,7 +456,10 @@ class ChatAgent extends Component
         }
         
         // Extract risk level
-        if (str_contains($lowerMessage, 'high risk') || str_contains($lowerMessage, 'high-risk')) {
+        if (str_contains($lowerMessage, 'high risk') || str_contains($lowerMessage, 'high-risk') || 
+            str_contains($lowerMessage, 'dangerous') || str_contains($lowerMessage, 'danger') ||
+            str_contains($lowerMessage, 'urgent') || str_contains($lowerMessage, 'serious') ||
+            str_contains($lowerMessage, 'critical') || str_contains($lowerMessage, 'severe')) {
             $parameters['risk_level'] = 'high';
         }
         
@@ -466,7 +469,8 @@ class ChatAgent extends Component
         }
         
         // Extract time filters
-        if (str_contains($lowerMessage, 'past week') || str_contains($lowerMessage, 'last week')) {
+        if (str_contains($lowerMessage, 'past week') || str_contains($lowerMessage, 'last week') || 
+            str_contains($lowerMessage, 'this week')) {
             $parameters['time_filter'] = 'past_week';
         } elseif (str_contains($lowerMessage, 'yesterday')) {
             $parameters['time_filter'] = 'yesterday';
