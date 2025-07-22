@@ -35,6 +35,9 @@ This project serves as a **beginner's guide to LangChain integration** using rea
 5. **Vector Search**: Semantic similarity for complaint discovery and analysis
 6. **Production Patterns**: Error handling, monitoring, scaling, and deployment
 
+![LaraCity Dashboard Screenshot](https://github.com/bmadigan/LaraCity/blob/main/public/imgs/dashboard-screenshot-dangerous.png?raw=true)
+
+
 ## 🚀 Quick Start
 
 ### Prerequisites
