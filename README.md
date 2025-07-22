@@ -2,6 +2,9 @@
 
 > **🎯 Educational Focus**: A comprehensive tutorial demonstrating **LangChain RAG integration** with real-world civic data, showcasing modern Laravel architecture patterns and production-ready AI implementation.
 
+### The Tutorial Series:
+[!LaraCity - Municipal AI Complaint System](https://madigan.dev/blog/mastering-ai-engineering-building-a-production-ready-ai-complaint-system-with-laravel-langchain)
+
 [![Laravel](https://img.shields.io/badge/Laravel-12.x-red.svg)](https://laravel.com)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://python.org)
 [![LangChain](https://img.shields.io/badge/LangChain-0.1+-green.svg)](https://langchain.com)
@@ -534,7 +537,5 @@ This project is open-sourced software licensed under the [MIT license](LICENSE).
 - **OpenAI** for embedding and language model APIs
 
 ---
-
-**🚀 Ready to dive in?** Start with the [Tutorial-Details.md](Tutorial-Details.md) for a comprehensive walkthrough, or jump straight into the code with the Quick Start guide above!
 
 For questions, issues, or contributions, please open a GitHub issue or reach out to the maintainers.
