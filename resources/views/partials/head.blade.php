@@ -9,5 +9,9 @@
 <link rel="preconnect" href="https://fonts.bunny.net">
 <link href="https://fonts.bunny.net/css?family=instrument-sans:400,500,600" rel="stylesheet" />
 
+@if(config('app.env') === 'production')
+<script src="https://cdn.usefathom.com/script.js" data-site="{{ config('laracity.fathom_site_id') }}" defer></script>
+@endif
+
 @vite(['resources/css/app.css', 'resources/js/app.js'])
 @fluxAppearance
